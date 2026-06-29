@@ -144,7 +144,7 @@ pip install pymavlink python-can rich websockets numpy
 
 - [x] System architecture design
 - [x] Hardware selection and procurement
-- [ ] STM32 FreeRTOS task skeleton
+- [x] STM32 FreeRTOS task skeleton
 - [ ] GY-87 I2C driver (MPU6050 + BMP180 + HMC5883L)
 - [ ] CAN Bus frame encoding and transmission
 - [ ] MAVLink bridge (STM32 → PC)
