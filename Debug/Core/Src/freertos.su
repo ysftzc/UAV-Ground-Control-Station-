@@ -1,0 +1,6 @@
+../Core/Src/freertos.c:88:6:MX_FREERTOS_Init	16	static
+../Core/Src/freertos.c:110:6:IMU_Task	40	static
+../Core/Src/freertos.c:127:6:Baro_Task	32	static
+../Core/Src/freertos.c:141:6:Mag_Task	32	static
+../Core/Src/freertos.c:155:6:CAN_TX_Task	64	static
+../Core/Src/freertos.c:193:6:WDG_Task	24	static
