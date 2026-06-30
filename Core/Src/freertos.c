@@ -22,6 +22,7 @@
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
+#include "can.h"
 #include "queue.h"
 #include "semphr.h"
 
@@ -71,6 +72,13 @@ typedef struct {
     float mag_x, mag_y, mag_z;
 } Mag_Data_t;
 
+/* CAN handles */
+CAN_TxHeaderTypeDef TxHeader;
+CAN_RxHeaderTypeDef RxHeader;
+uint8_t TxData[8];
+uint8_t RxData[8];
+uint32_t TxMailbox;
+
 /* USER CODE END Variables */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -82,6 +90,8 @@ void CAN_TX_Task(void *argument);
 void WDG_Task(void *argument);
 
 /* USER CODE END FunctionPrototypes */
+
+void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
@@ -157,12 +167,47 @@ void CAN_TX_Task(void *argument) {
     Baro_Data_t baro_data;
     Mag_Data_t  mag_data;
 
+    /* CAN filtreyi başlat — tüm mesajları kabul et */
+    CAN_FilterTypeDef sFilterConfig;
+    sFilterConfig.FilterBank = 0;
+    sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
+    sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
+    sFilterConfig.FilterIdHigh = 0x0000;
+    sFilterConfig.FilterIdLow = 0x0000;
+    sFilterConfig.FilterMaskIdHigh = 0x0000;
+    sFilterConfig.FilterMaskIdLow = 0x0000;
+    sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
+    sFilterConfig.FilterActivation = ENABLE;
+    HAL_CAN_ConfigFilter(&hcan, &sFilterConfig);
+
+    /* CAN'ı başlat */
+    HAL_CAN_Start(&hcan);
+
     for(;;) {
         /* IMU verisi geldi mi? */
         if(xQueueReceive(xIMUQueue, &imu_data, pdMS_TO_TICKS(10)) == pdTRUE) {
             if(xSemaphoreTake(xCANMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-                /* TODO: CAN frame pack ve gönder buraya gelecek */
-                /* CAN ID: 0x101 — IMU data */
+
+                TxHeader.StdId = 0x101;
+                TxHeader.IDE = CAN_ID_STD;
+                TxHeader.RTR = CAN_RTR_DATA;
+                TxHeader.DLC = 8;
+
+                int16_t ax = (int16_t)(imu_data.accel_x * 100);
+                int16_t ay = (int16_t)(imu_data.accel_y * 100);
+                int16_t az = (int16_t)(imu_data.accel_z * 100);
+
+                TxData[0] = (ax >> 8) & 0xFF;
+                TxData[1] = ax & 0xFF;
+                TxData[2] = (ay >> 8) & 0xFF;
+                TxData[3] = ay & 0xFF;
+                TxData[4] = (az >> 8) & 0xFF;
+                TxData[5] = az & 0xFF;
+                TxData[6] = 0x00;
+                TxData[7] = 0x00;
+
+                HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &TxMailbox);
+
                 xSemaphoreGive(xCANMutex);
             }
         }
@@ -200,4 +245,3 @@ void WDG_Task(void *argument) {
 }
 
 /* USER CODE END Application */
-

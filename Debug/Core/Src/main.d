@@ -34,7 +34,9 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
  /home/yusuf/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.7/Middlewares/Third_Party/FreeRTOS/Source/include/mpu_wrappers.h \
  /home/yusuf/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.7/Middlewares/Third_Party/FreeRTOS/Source/include/task.h \
  /home/yusuf/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.7/Middlewares/Third_Party/FreeRTOS/Source/include/list.h \
- /home/yusuf/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.7/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.h
+ /home/yusuf/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.7/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.h \
+ ../Core/Inc/can.h ../Core/Inc/main.h ../Core/Inc/i2c.h \
+ ../Core/Inc/usart.h ../Core/Inc/gpio.h
 ../Core/Inc/main.h:
 /home/yusuf/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.7/Drivers/STM32F1xx_HAL_Driver/Inc/stm32f1xx_hal.h:
 ../Core/Inc/stm32f1xx_hal_conf.h:
@@ -72,3 +74,8 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
 /home/yusuf/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.7/Middlewares/Third_Party/FreeRTOS/Source/include/task.h:
 /home/yusuf/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.7/Middlewares/Third_Party/FreeRTOS/Source/include/list.h:
 /home/yusuf/STM32Cube/Repository/STM32Cube_FW_F1_V1.8.7/Middlewares/Third_Party/FreeRTOS/Source/CMSIS_RTOS_V2/cmsis_os2.h:
+../Core/Inc/can.h:
+../Core/Inc/main.h:
+../Core/Inc/i2c.h:
+../Core/Inc/usart.h:
+../Core/Inc/gpio.h:
