@@ -111,9 +111,9 @@ Python GCS Dashboard  ←  live HUD, map, FreeRTOS monitor, alerts
 
 | Layer | Status | Notes |
 |-------|--------|-------|
-| STM32 FreeRTOS tasks | 🔄 In progress | IMU task, CAN TX task |
+| STM32 FreeRTOS tasks | ✅ Complete | IMU task, CAN TX task |
 | GY-87 I2C driver | 🔄 In progress | MPU6050 + BMP180 |
-| CAN Bus transmission | 📋 Planned | SN65HVD230 transceiver |
+| CAN Bus transmission | ✅ Complete (loopback mode) | SN65HVD230 transceiver |
 | MAVLink encoding | 📋 Planned | mavlink_helpers.h |
 | PX4 SITL integration | 📋 Planned | uXRCE-DDS bridge |
 | ROS2 software layer | 📋 Planned | px4_ros2 + Nav2 |
@@ -146,7 +146,7 @@ pip install pymavlink python-can rich websockets numpy
 - [x] Hardware selection and procurement
 - [x] STM32 FreeRTOS task skeleton
 - [ ] GY-87 I2C driver (MPU6050 + BMP180 + HMC5883L)
-- [ ] CAN Bus frame encoding and transmission
+- [x] CAN Bus frame encoding and transmission
 - [ ] MAVLink bridge (STM32 → PC)
 - [ ] PX4 SITL setup and first simulated flight
 - [ ] Hardware-in-the-loop: real IMU → PX4 SITL
