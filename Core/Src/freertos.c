@@ -22,13 +22,12 @@
 #include "task.h"
 #include "main.h"
 #include "cmsis_os.h"
-#include "can.h"
-#include "queue.h"
-#include "semphr.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "can.h"
+#include "queue.h"
+#include "semphr.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -48,6 +47,7 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN Variables */
+
 /* Queue handles */
 QueueHandle_t xIMUQueue;
 QueueHandle_t xBaroQueue;
@@ -80,6 +80,13 @@ uint8_t RxData[8];
 uint32_t TxMailbox;
 
 /* USER CODE END Variables */
+/* Definitions for defaultTask */
+osThreadId_t defaultTaskHandle;
+const osThreadAttr_t defaultTask_attributes = {
+  .name = "defaultTask",
+  .stack_size = 128 * 4,
+  .priority = (osPriority_t) osPriorityNormal,
+};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -91,32 +98,91 @@ void WDG_Task(void *argument);
 
 /* USER CODE END FunctionPrototypes */
 
+void StartDefaultTask(void *argument);
+
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
+
+/**
+  * @brief  FreeRTOS initialization
+  * @param  None
+  * @retval None
+  */
+void MX_FREERTOS_Init(void) {
+  /* USER CODE BEGIN Init */
+
+  /* Queue oluştur */
+  xIMUQueue  = xQueueCreate(10, sizeof(IMU_Data_t));
+  xBaroQueue = xQueueCreate(5,  sizeof(Baro_Data_t));
+  xMagQueue  = xQueueCreate(5,  sizeof(Mag_Data_t));
+
+  /* Mutex oluştur */
+  xCANMutex = xSemaphoreCreateMutex();
+
+  /* Task'ları oluştur */
+  xTaskCreate(IMU_Task,    "IMU_TASK",    256, NULL, 4, NULL);
+  xTaskCreate(Baro_Task,   "BARO_TASK",   128, NULL, 3, NULL);
+  xTaskCreate(Mag_Task,    "MAG_TASK",    128, NULL, 3, NULL);
+  xTaskCreate(CAN_TX_Task, "CAN_TX_TASK", 256, NULL, 3, NULL);
+  xTaskCreate(WDG_Task,    "WDG_TASK",    128, NULL, 1, NULL);
+
+  /* Scheduler başlat */
+  vTaskStartScheduler();
+  return; /* defaultTask'ın oluşturulmasını engellemek için - aşağıdaki osThreadNew hiç çalışmaz */
+  /* USER CODE END Init */
+
+  /* USER CODE BEGIN RTOS_MUTEX */
+  /* add mutexes, ... */
+  /* USER CODE END RTOS_MUTEX */
+
+  /* USER CODE BEGIN RTOS_SEMAPHORES */
+  /* add semaphores, ... */
+  /* USER CODE END RTOS_SEMAPHORES */
+
+  /* USER CODE BEGIN RTOS_TIMERS */
+  /* start timers, add new ones, ... */
+  /* USER CODE END RTOS_TIMERS */
+
+  /* USER CODE BEGIN RTOS_QUEUES */
+  /* add queues, ... */
+  /* USER CODE END RTOS_QUEUES */
+
+  /* Create the thread(s) */
+  /* creation of defaultTask */
+  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
+
+  /* USER CODE BEGIN RTOS_THREADS */
+  /* add threads, ... */
+  /* USER CODE END RTOS_THREADS */
+
+  /* USER CODE BEGIN RTOS_EVENTS */
+  /* add events, ... */
+  /* USER CODE END RTOS_EVENTS */
+
+}
+
+/* USER CODE BEGIN Header_StartDefaultTask */
+/**
+  * @brief  Function implementing the defaultTask thread.
+  *         Bu fonksiyon hiçbir zaman çağrılmaz (MX_FREERTOS_Init içindeki
+  *         "return" satırı yüzünden) - sadece CubeMX iskeletini korumak için var.
+  * @param  argument: Not used
+  * @retval None
+  */
+/* USER CODE END Header_StartDefaultTask */
+void StartDefaultTask(void *argument)
+{
+  /* USER CODE BEGIN StartDefaultTask */
+  for(;;)
+  {
+    osDelay(1);
+  }
+  /* USER CODE END StartDefaultTask */
+}
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
-void MX_FREERTOS_Init(void) {
 
-    /* Queue oluştur */
-    xIMUQueue  = xQueueCreate(10, sizeof(IMU_Data_t));
-    xBaroQueue = xQueueCreate(5,  sizeof(Baro_Data_t));
-    xMagQueue  = xQueueCreate(5,  sizeof(Mag_Data_t));
-
-    /* Mutex oluştur */
-    xCANMutex = xSemaphoreCreateMutex();
-
-    /* Task'ları oluştur */
-    xTaskCreate(IMU_Task,    "IMU_TASK",    256, NULL, 4, NULL);
-    xTaskCreate(Baro_Task,   "BARO_TASK",   128, NULL, 3, NULL);
-    xTaskCreate(Mag_Task,    "MAG_TASK",    128, NULL, 3, NULL);
-    xTaskCreate(CAN_TX_Task, "CAN_TX_TASK", 256, NULL, 3, NULL);
-    xTaskCreate(WDG_Task,    "WDG_TASK",    128, NULL, 1, NULL);
-
-    /* Scheduler başlat */
-    vTaskStartScheduler();
-}
-
-/* IMU Task — MPU6050 okuma, 50ms */
+/* IMU Task - MPU6050 okuma, 50ms */
 void IMU_Task(void *argument) {
     IMU_Data_t imu_data;
     for(;;) {
@@ -133,7 +199,7 @@ void IMU_Task(void *argument) {
     }
 }
 
-/* Baro Task — BMP180 okuma, 500ms */
+/* Baro Task - BMP180 okuma, 500ms */
 void Baro_Task(void *argument) {
     Baro_Data_t baro_data;
     for(;;) {
@@ -147,7 +213,7 @@ void Baro_Task(void *argument) {
     }
 }
 
-/* Mag Task — HMC5883L okuma, 100ms */
+/* Mag Task - HMC5883L okuma, 100ms */
 void Mag_Task(void *argument) {
     Mag_Data_t mag_data;
     for(;;) {
@@ -161,26 +227,26 @@ void Mag_Task(void *argument) {
     }
 }
 
-/* CAN TX Task — queue'dan al, CAN'a gönder */
+/* CAN TX Task - queue'dan al, CAN'a gonder */
 void CAN_TX_Task(void *argument) {
     IMU_Data_t  imu_data;
     Baro_Data_t baro_data;
     Mag_Data_t  mag_data;
 
-    /* CAN filtreyi başlat — tüm mesajları kabul et */
+    /* CAN filtreyi baslat - tum mesajlari kabul et */
     CAN_FilterTypeDef sFilterConfig;
-    sFilterConfig.FilterBank = 0;
-    sFilterConfig.FilterMode = CAN_FILTERMODE_IDMASK;
-    sFilterConfig.FilterScale = CAN_FILTERSCALE_32BIT;
-    sFilterConfig.FilterIdHigh = 0x0000;
-    sFilterConfig.FilterIdLow = 0x0000;
-    sFilterConfig.FilterMaskIdHigh = 0x0000;
-    sFilterConfig.FilterMaskIdLow = 0x0000;
+    sFilterConfig.FilterBank           = 0;
+    sFilterConfig.FilterMode           = CAN_FILTERMODE_IDMASK;
+    sFilterConfig.FilterScale          = CAN_FILTERSCALE_32BIT;
+    sFilterConfig.FilterIdHigh         = 0x0000;
+    sFilterConfig.FilterIdLow          = 0x0000;
+    sFilterConfig.FilterMaskIdHigh     = 0x0000;
+    sFilterConfig.FilterMaskIdLow      = 0x0000;
     sFilterConfig.FilterFIFOAssignment = CAN_RX_FIFO0;
-    sFilterConfig.FilterActivation = ENABLE;
+    sFilterConfig.FilterActivation     = ENABLE;
     HAL_CAN_ConfigFilter(&hcan, &sFilterConfig);
 
-    /* CAN'ı başlat */
+    /* CAN'i baslat */
     HAL_CAN_Start(&hcan);
 
     for(;;) {
@@ -189,9 +255,9 @@ void CAN_TX_Task(void *argument) {
             if(xSemaphoreTake(xCANMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
 
                 TxHeader.StdId = 0x101;
-                TxHeader.IDE = CAN_ID_STD;
-                TxHeader.RTR = CAN_RTR_DATA;
-                TxHeader.DLC = 8;
+                TxHeader.IDE   = CAN_ID_STD;
+                TxHeader.RTR   = CAN_RTR_DATA;
+                TxHeader.DLC   = 8;
 
                 int16_t ax = (int16_t)(imu_data.accel_x * 100);
                 int16_t ay = (int16_t)(imu_data.accel_y * 100);
@@ -207,7 +273,6 @@ void CAN_TX_Task(void *argument) {
                 TxData[7] = 0x00;
 
                 HAL_CAN_AddTxMessage(&hcan, &TxHeader, TxData, &TxMailbox);
-
                 xSemaphoreGive(xCANMutex);
             }
         }
@@ -215,8 +280,7 @@ void CAN_TX_Task(void *argument) {
         /* Baro verisi geldi mi? */
         if(xQueueReceive(xBaroQueue, &baro_data, pdMS_TO_TICKS(10)) == pdTRUE) {
             if(xSemaphoreTake(xCANMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-                /* TODO: CAN frame pack ve gönder buraya gelecek */
-                /* CAN ID: 0x102 — Baro data */
+                /* TODO: CAN ID: 0x102 - Baro data */
                 xSemaphoreGive(xCANMutex);
             }
         }
@@ -224,8 +288,7 @@ void CAN_TX_Task(void *argument) {
         /* Mag verisi geldi mi? */
         if(xQueueReceive(xMagQueue, &mag_data, pdMS_TO_TICKS(10)) == pdTRUE) {
             if(xSemaphoreTake(xCANMutex, pdMS_TO_TICKS(5)) == pdTRUE) {
-                /* TODO: CAN frame pack ve gönder buraya gelecek */
-                /* CAN ID: 0x103 — Mag data */
+                /* TODO: CAN ID: 0x103 - Mag data */
                 xSemaphoreGive(xCANMutex);
             }
         }
@@ -234,14 +297,19 @@ void CAN_TX_Task(void *argument) {
     }
 }
 
-/* Watchdog Task — sistem sağlığı izleme, 1000ms */
+/* Watchdog Task - sistem sagligi izleme + LED blink, 1000ms */
 void WDG_Task(void *argument) {
     for(;;) {
-        /* TODO: heap monitör, IWDG refresh buraya gelecek */
+        /* PC13 LED toggle - sistem calisiyor gostergesi */
+        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+
+        /* Heap monitor */
         uint32_t heap_free = xPortGetFreeHeapSize();
         (void)heap_free;
+
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
 /* USER CODE END Application */
+
