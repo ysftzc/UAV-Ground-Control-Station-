@@ -38,7 +38,7 @@ Python GCS Dashboard  ←  live HUD, map, FreeRTOS monitor, alerts
 │                                                     │
 │  [IMU Task]    [Baro Task]   [Mag Task]             │
 │  MPU6050       BMP180        HMC5883L               │
-│  50ms / I2C    500ms / I2C   100ms / I2C            │
+│  500ms / I2C   2000ms / I2C  1000ms / I2C           │
 │       │              │            │                 │
 │       └──────────────┴────────────┘                 │
 │                      │ Queue + Mutex                │
@@ -112,7 +112,7 @@ Python GCS Dashboard  ←  live HUD, map, FreeRTOS monitor, alerts
 | Layer | Status | Notes |
 |-------|--------|-------|
 | STM32 FreeRTOS tasks | ✅ Complete | IMU task, CAN TX task |
-| GY-87 I2C driver | 🔄 In progress | MPU6050 ✅ done — BMP180 + HMC5883L pending |
+| GY-87 I2C driver | 🔄 In progress | MPU6050 + BMP180 ✅ done — HMC5883L pending |
 | CAN Bus transmission | ✅ Complete (loopback mode) | SN65HVD230 transceiver |
 | MAVLink encoding | 📋 Planned | mavlink_helpers.h |
 | PX4 SITL integration | 📋 Planned | uXRCE-DDS bridge |
@@ -146,7 +146,8 @@ pip install pymavlink python-can rich websockets numpy
 - [x] Hardware selection and procurement
 - [x] STM32 FreeRTOS task skeleton
 - [x] MPU6050 I2C driver (real accel + gyro data)
-- [ ] BMP180 + HMC5883L I2C drivers
+- [x] BMP180 I2C driver (real pressure + temp + altitude)
+- [ ] HMC5883L I2C driver
 - [x] CAN Bus frame encoding and transmission
 - [ ] MAVLink bridge (STM32 → PC)
 - [ ] PX4 SITL setup and first simulated flight

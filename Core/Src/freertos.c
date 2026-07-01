@@ -29,6 +29,7 @@
 #include "usart.h"
 #include "i2c.h"
 #include "mpu6050.h"
+#include "bmp180.h"
 #include "queue.h"
 #include "semphr.h"
 #include <stdio.h>
@@ -197,13 +198,25 @@ void IMU_Task(void *argument) {
 
 /* Baro Task - BMP180 okuma, 2000ms */
 void Baro_Task(void *argument) {
-    Baro_Data_t baro_data;
-    char msg[64];
+    Baro_Data_t baro_data = {0};
+    BMP180_Data_t bmp_data;
+    char msg[96];
+
+    /* BMP180'i baslat - basarisiz olursa task son okunan degerlerle devam eder */
+    HAL_StatusTypeDef init_status = BMP180_Init(&hi2c1);
+    snprintf(msg, sizeof(msg), "[BARO] BMP180 init %s\r\n",
+             (init_status == HAL_OK) ? "OK" : "FAIL");
+    if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+        xSemaphoreGive(xUARTMutex);
+    }
+
     for(;;) {
-        /* TODO: BMP180 I2C okuma buraya gelecek */
-        baro_data.pressure    = 1013.25f;
-        baro_data.temperature = 25.0f;
-        baro_data.altitude    = 0.0f;
+        if(BMP180_ReadData(&hi2c1, &bmp_data) == HAL_OK) {
+            baro_data.pressure    = bmp_data.pressure;
+            baro_data.temperature = bmp_data.temperature;
+            baro_data.altitude    = bmp_data.altitude;
+        }
 
         xQueueSend(xBaroQueue, &baro_data, 0);
 

@@ -1,3 +1,4 @@
+"./Core/Src/bmp180.o"
 "./Core/Src/can.o"
 "./Core/Src/freertos.o"
 "./Core/Src/gpio.o"
