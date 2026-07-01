@@ -87,9 +87,9 @@ Python GCS Dashboard  ←  live HUD, map, FreeRTOS monitor, alerts
 
 | Task | Priority | Period | Function |
 |------|----------|--------|----------|
-| `IMU_TASK` | High | 50ms | MPU6050 accel + gyro via I2C → Queue |
-| `MAG_TASK` | Medium | 100ms | HMC5883L magnetometer → Queue |
-| `BARO_TASK` | Medium | 500ms | BMP180 pressure + temp → Queue |
+| `IMU_TASK` | High | 500ms | MPU6050 accel + gyro via I2C → Queue |
+| `MAG_TASK` | Medium | 1000ms | HMC5883L magnetometer → Queue |
+| `BARO_TASK` | Medium | 2000ms | BMP180 pressure + temp → Queue |
 | `CAN_TX_TASK` | Medium | triggered | Dequeue → pack → transmit (Mutex protected) |
 | `WDG_TASK` | Low | 1000ms | System health, heap monitor, heartbeat |
 
@@ -112,7 +112,7 @@ Python GCS Dashboard  ←  live HUD, map, FreeRTOS monitor, alerts
 | Layer | Status | Notes |
 |-------|--------|-------|
 | STM32 FreeRTOS tasks | ✅ Complete | IMU task, CAN TX task |
-| GY-87 I2C driver | 🔄 In progress | MPU6050 + BMP180 |
+| GY-87 I2C driver | 🔄 In progress | MPU6050 ✅ done — BMP180 + HMC5883L pending |
 | CAN Bus transmission | ✅ Complete (loopback mode) | SN65HVD230 transceiver |
 | MAVLink encoding | 📋 Planned | mavlink_helpers.h |
 | PX4 SITL integration | 📋 Planned | uXRCE-DDS bridge |
@@ -145,7 +145,8 @@ pip install pymavlink python-can rich websockets numpy
 - [x] System architecture design
 - [x] Hardware selection and procurement
 - [x] STM32 FreeRTOS task skeleton
-- [ ] GY-87 I2C driver (MPU6050 + BMP180 + HMC5883L)
+- [x] MPU6050 I2C driver (real accel + gyro data)
+- [ ] BMP180 + HMC5883L I2C drivers
 - [x] CAN Bus frame encoding and transmission
 - [ ] MAVLink bridge (STM32 → PC)
 - [ ] PX4 SITL setup and first simulated flight
