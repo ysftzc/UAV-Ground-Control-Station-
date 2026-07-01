@@ -26,8 +26,13 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "can.h"
+#include "usart.h"
+#include "i2c.h"
+#include "mpu6050.h"
 #include "queue.h"
 #include "semphr.h"
+#include <stdio.h>
+#include <string.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -53,8 +58,9 @@ QueueHandle_t xIMUQueue;
 QueueHandle_t xBaroQueue;
 QueueHandle_t xMagQueue;
 
-/* Mutex handle */
+/* Mutex handles */
 SemaphoreHandle_t xCANMutex;
+SemaphoreHandle_t xUARTMutex;
 
 /* Sensor data structs */
 typedef struct {
@@ -80,13 +86,6 @@ uint8_t RxData[8];
 uint32_t TxMailbox;
 
 /* USER CODE END Variables */
-/* Definitions for defaultTask */
-osThreadId_t defaultTaskHandle;
-const osThreadAttr_t defaultTask_attributes = {
-  .name = "defaultTask",
-  .stack_size = 128 * 4,
-  .priority = (osPriority_t) osPriorityNormal,
-};
 
 /* Private function prototypes -----------------------------------------------*/
 /* USER CODE BEGIN FunctionPrototypes */
@@ -95,113 +94,111 @@ void Baro_Task(void *argument);
 void Mag_Task(void *argument);
 void CAN_TX_Task(void *argument);
 void WDG_Task(void *argument);
-
 /* USER CODE END FunctionPrototypes */
 
-void StartDefaultTask(void *argument);
-
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
-
-/**
-  * @brief  FreeRTOS initialization
-  * @param  None
-  * @retval None
-  */
-void MX_FREERTOS_Init(void) {
-  /* USER CODE BEGIN Init */
-
-  /* Queue oluştur */
-  xIMUQueue  = xQueueCreate(10, sizeof(IMU_Data_t));
-  xBaroQueue = xQueueCreate(5,  sizeof(Baro_Data_t));
-  xMagQueue  = xQueueCreate(5,  sizeof(Mag_Data_t));
-
-  /* Mutex oluştur */
-  xCANMutex = xSemaphoreCreateMutex();
-
-  /* Task'ları oluştur */
-  xTaskCreate(IMU_Task,    "IMU_TASK",    256, NULL, 4, NULL);
-  xTaskCreate(Baro_Task,   "BARO_TASK",   128, NULL, 3, NULL);
-  xTaskCreate(Mag_Task,    "MAG_TASK",    128, NULL, 3, NULL);
-  xTaskCreate(CAN_TX_Task, "CAN_TX_TASK", 256, NULL, 3, NULL);
-  xTaskCreate(WDG_Task,    "WDG_TASK",    128, NULL, 1, NULL);
-
-  /* Scheduler başlat */
-  vTaskStartScheduler();
-  return; /* defaultTask'ın oluşturulmasını engellemek için - aşağıdaki osThreadNew hiç çalışmaz */
-  /* USER CODE END Init */
-
-  /* USER CODE BEGIN RTOS_MUTEX */
-  /* add mutexes, ... */
-  /* USER CODE END RTOS_MUTEX */
-
-  /* USER CODE BEGIN RTOS_SEMAPHORES */
-  /* add semaphores, ... */
-  /* USER CODE END RTOS_SEMAPHORES */
-
-  /* USER CODE BEGIN RTOS_TIMERS */
-  /* start timers, add new ones, ... */
-  /* USER CODE END RTOS_TIMERS */
-
-  /* USER CODE BEGIN RTOS_QUEUES */
-  /* add queues, ... */
-  /* USER CODE END RTOS_QUEUES */
-
-  /* Create the thread(s) */
-  /* creation of defaultTask */
-  defaultTaskHandle = osThreadNew(StartDefaultTask, NULL, &defaultTask_attributes);
-
-  /* USER CODE BEGIN RTOS_THREADS */
-  /* add threads, ... */
-  /* USER CODE END RTOS_THREADS */
-
-  /* USER CODE BEGIN RTOS_EVENTS */
-  /* add events, ... */
-  /* USER CODE END RTOS_EVENTS */
-
-}
-
-/* USER CODE BEGIN Header_StartDefaultTask */
-/**
-  * @brief  Function implementing the defaultTask thread.
-  *         Bu fonksiyon hiçbir zaman çağrılmaz (MX_FREERTOS_Init içindeki
-  *         "return" satırı yüzünden) - sadece CubeMX iskeletini korumak için var.
-  * @param  argument: Not used
-  * @retval None
-  */
-/* USER CODE END Header_StartDefaultTask */
-void StartDefaultTask(void *argument)
-{
-  /* USER CODE BEGIN StartDefaultTask */
-  for(;;)
-  {
-    osDelay(1);
-  }
-  /* USER CODE END StartDefaultTask */
-}
 
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 
-/* IMU Task - MPU6050 okuma, 50ms */
-void IMU_Task(void *argument) {
-    IMU_Data_t imu_data;
-    for(;;) {
-        /* TODO: MPU6050 I2C okuma buraya gelecek */
-        imu_data.accel_x = 0.0f;
-        imu_data.accel_y = 0.0f;
-        imu_data.accel_z = 9.81f;
-        imu_data.gyro_x  = 0.0f;
-        imu_data.gyro_y  = 0.0f;
-        imu_data.gyro_z  = 0.0f;
+void MX_FREERTOS_Init(void) {
 
-        xQueueSend(xIMUQueue, &imu_data, 0);
-        vTaskDelay(pdMS_TO_TICKS(50));
+    /* Queue olustur */
+    xIMUQueue  = xQueueCreate(10, sizeof(IMU_Data_t));
+    xBaroQueue = xQueueCreate(5,  sizeof(Baro_Data_t));
+    xMagQueue  = xQueueCreate(5,  sizeof(Mag_Data_t));
+
+    /* Mutex olustur */
+    xCANMutex  = xSemaphoreCreateMutex();
+    xUARTMutex = xSemaphoreCreateMutex();
+
+    /* Task'lari olustur */
+    xTaskCreate(IMU_Task,    "IMU_TASK",    256, NULL, 4, NULL);
+    xTaskCreate(Baro_Task,   "BARO_TASK",   128, NULL, 3, NULL);
+    xTaskCreate(Mag_Task,    "MAG_TASK",    128, NULL, 3, NULL);
+    xTaskCreate(CAN_TX_Task, "CAN_TX_TASK", 256, NULL, 3, NULL);
+    xTaskCreate(WDG_Task,    "WDG_TASK",    128, NULL, 1, NULL);
+
+    /* Scheduler baslat */
+    vTaskStartScheduler();
+}
+
+/* I2C bus tarama - hangi adreste cihaz ACK veriyor gormek icin (debug) */
+static void I2C_Scan(I2C_HandleTypeDef *hi2c) {
+    char msg[64];
+    int found = 0;
+
+    for (uint8_t addr = 1; addr < 128; addr++) {
+        if (HAL_I2C_IsDeviceReady(hi2c, (uint16_t)(addr << 1), 2, 5) == HAL_OK) {
+            snprintf(msg, sizeof(msg), "[I2C] cihaz bulundu: 0x%02X\r\n", addr);
+            if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+                HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+                xSemaphoreGive(xUARTMutex);
+            }
+            found++;
+        }
+    }
+
+    if (found == 0) {
+        snprintf(msg, sizeof(msg), "[I2C] bus taramasi: hicbir cihaz yanit vermedi\r\n");
+        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+            xSemaphoreGive(xUARTMutex);
+        }
     }
 }
 
-/* Baro Task - BMP180 okuma, 500ms */
+/* IMU Task - MPU6050 okuma, 500ms */
+void IMU_Task(void *argument) {
+    IMU_Data_t imu_data = {0};
+    MPU6050_Data_t mpu_data;
+    char msg[96];
+
+    I2C_Scan(&hi2c1);
+
+    /* MPU6050'yi baslat - basarisiz olursa task son okunan degerlerle devam eder */
+    HAL_StatusTypeDef init_status = MPU6050_Init(&hi2c1);
+    snprintf(msg, sizeof(msg), "[IMU] MPU6050 init %s\r\n",
+             (init_status == HAL_OK) ? "OK" : "FAIL");
+    if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+        xSemaphoreGive(xUARTMutex);
+    }
+
+    for(;;) {
+        if(MPU6050_ReadData(&hi2c1, &mpu_data) == HAL_OK) {
+            imu_data.accel_x = mpu_data.accel_x;
+            imu_data.accel_y = mpu_data.accel_y;
+            imu_data.accel_z = mpu_data.accel_z;
+            imu_data.gyro_x  = mpu_data.gyro_x;
+            imu_data.gyro_y  = mpu_data.gyro_y;
+            imu_data.gyro_z  = mpu_data.gyro_z;
+        }
+
+        xQueueSend(xIMUQueue, &imu_data, 0);
+
+        /* UART debug - integer olarak gonder (float printf gerektirmez) */
+        snprintf(msg, sizeof(msg), "[IMU] ax:%d ay:%d az:%d gx:%d gy:%d gz:%d\r\n",
+                 (int)(imu_data.accel_x * 100),
+                 (int)(imu_data.accel_y * 100),
+                 (int)(imu_data.accel_z * 100),
+                 (int)(imu_data.gyro_x  * 100),
+                 (int)(imu_data.gyro_y  * 100),
+                 (int)(imu_data.gyro_z  * 100));
+
+        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+            xSemaphoreGive(xUARTMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
+    }
+}
+
+/* Baro Task - BMP180 okuma, 2000ms */
 void Baro_Task(void *argument) {
     Baro_Data_t baro_data;
+    char msg[64];
     for(;;) {
         /* TODO: BMP180 I2C okuma buraya gelecek */
         baro_data.pressure    = 1013.25f;
@@ -209,13 +206,25 @@ void Baro_Task(void *argument) {
         baro_data.altitude    = 0.0f;
 
         xQueueSend(xBaroQueue, &baro_data, 0);
-        vTaskDelay(pdMS_TO_TICKS(500));
+
+        snprintf(msg, sizeof(msg), "[BARO] p:%d t:%d alt:%d\r\n",
+                 (int)(baro_data.pressure    * 100),
+                 (int)(baro_data.temperature * 100),
+                 (int)(baro_data.altitude    * 100));
+
+        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+            xSemaphoreGive(xUARTMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(2000));
     }
 }
 
-/* Mag Task - HMC5883L okuma, 100ms */
+/* Mag Task - HMC5883L okuma, 1000ms */
 void Mag_Task(void *argument) {
     Mag_Data_t mag_data;
+    char msg[64];
     for(;;) {
         /* TODO: HMC5883L I2C okuma buraya gelecek */
         mag_data.mag_x = 0.0f;
@@ -223,7 +232,18 @@ void Mag_Task(void *argument) {
         mag_data.mag_z = 0.0f;
 
         xQueueSend(xMagQueue, &mag_data, 0);
-        vTaskDelay(pdMS_TO_TICKS(100));
+
+        snprintf(msg, sizeof(msg), "[MAG] mx:%d my:%d mz:%d\r\n",
+                 (int)(mag_data.mag_x * 100),
+                 (int)(mag_data.mag_y * 100),
+                 (int)(mag_data.mag_z * 100));
+
+        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+            xSemaphoreGive(xUARTMutex);
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
@@ -299,17 +319,23 @@ void CAN_TX_Task(void *argument) {
 
 /* Watchdog Task - sistem sagligi izleme + LED blink, 1000ms */
 void WDG_Task(void *argument) {
+    char msg[64];
+    uint32_t tick = 0;
     for(;;) {
-        /* PC13 LED toggle - sistem calisiyor gostergesi */
+        /* PC13 LED toggle */
         HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 
-        /* Heap monitor */
+        /* Heap monitor + UART */
         uint32_t heap_free = xPortGetFreeHeapSize();
-        (void)heap_free;
+        snprintf(msg, sizeof(msg), "[WDG] tick:%lu heap:%lu free\r\n", tick++, heap_free);
+
+        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+            xSemaphoreGive(xUARTMutex);
+        }
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
 }
 
 /* USER CODE END Application */
-
