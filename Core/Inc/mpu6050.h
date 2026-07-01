@@ -19,6 +19,8 @@ extern "C" {
 #define MPU6050_REG_ACCEL_XOUT_H 0x3B
 #define MPU6050_REG_PWR_MGMT_1  0x6B
 #define MPU6050_REG_WHO_AM_I    0x75
+#define MPU6050_REG_INT_PIN_CFG 0x37
+#define MPU6050_REG_USER_CTRL   0x6A
 
 #define MPU6050_WHO_AM_I_VAL    0x68
 

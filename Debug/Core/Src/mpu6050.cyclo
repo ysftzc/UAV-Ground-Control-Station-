@@ -1,4 +1,4 @@
 ../Core/Src/mpu6050.c:4:26:MPU6050_WriteReg	1
 ../Core/Src/mpu6050.c:8:26:MPU6050_ReadRegs	1
-../Core/Src/mpu6050.c:12:19:MPU6050_Init	8
-../Core/Src/mpu6050.c:45:19:MPU6050_ReadData	2
+../Core/Src/mpu6050.c:12:19:MPU6050_Init	10
+../Core/Src/mpu6050.c:54:19:MPU6050_ReadData	2

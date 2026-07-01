@@ -1,0 +1,4 @@
+../Core/Src/qmc5883p.c:4:26:QMC5883P_WriteReg	1
+../Core/Src/qmc5883p.c:8:26:QMC5883P_ReadRegs	1
+../Core/Src/qmc5883p.c:12:19:QMC5883P_Init	8
+../Core/Src/qmc5883p.c:47:19:QMC5883P_ReadData	2

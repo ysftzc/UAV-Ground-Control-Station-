@@ -1,7 +1,8 @@
-../Core/Src/freertos.c:105:6:MX_FREERTOS_Init	16	static
-../Core/Src/freertos.c:128:13:I2C_Scan	88	static
-../Core/Src/freertos.c:153:6:IMU_Task	208	static
-../Core/Src/freertos.c:200:6:Baro_Task	160	static
-../Core/Src/freertos.c:238:6:Mag_Task	112	static
-../Core/Src/freertos.c:264:6:CAN_TX_Task	112	static
-../Core/Src/freertos.c:334:6:WDG_Task	96	static
+../Core/Src/freertos.c:107:6:MX_FREERTOS_Init	16	static
+../Core/Src/freertos.c:131:13:I2C_Scan	88	static
+../Core/Src/freertos.c:156:13:QMC_DumpDiag	144	static
+../Core/Src/freertos.c:174:6:IMU_Task	208	static
+../Core/Src/freertos.c:226:6:Baro_Task	160	static
+../Core/Src/freertos.c:269:6:Mag_Task	160	static
+../Core/Src/freertos.c:316:6:CAN_TX_Task	112	static
+../Core/Src/freertos.c:386:6:WDG_Task	96	static

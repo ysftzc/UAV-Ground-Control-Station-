@@ -30,6 +30,7 @@
 #include "i2c.h"
 #include "mpu6050.h"
 #include "bmp180.h"
+#include "qmc5883p.h"
 #include "queue.h"
 #include "semphr.h"
 #include <stdio.h>
@@ -62,6 +63,7 @@ QueueHandle_t xMagQueue;
 /* Mutex handles */
 SemaphoreHandle_t xCANMutex;
 SemaphoreHandle_t xUARTMutex;
+SemaphoreHandle_t xI2CMutex;  /* hi2c1, IMU/Baro/Mag task'lari arasinda paylasiliyor */
 
 /* Sensor data structs */
 typedef struct {
@@ -112,6 +114,7 @@ void MX_FREERTOS_Init(void) {
     /* Mutex olustur */
     xCANMutex  = xSemaphoreCreateMutex();
     xUARTMutex = xSemaphoreCreateMutex();
+    xI2CMutex  = xSemaphoreCreateMutex();
 
     /* Task'lari olustur */
     xTaskCreate(IMU_Task,    "IMU_TASK",    256, NULL, 4, NULL);
@@ -155,10 +158,12 @@ void IMU_Task(void *argument) {
     MPU6050_Data_t mpu_data;
     char msg[96];
 
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
     I2C_Scan(&hi2c1);
 
     /* MPU6050'yi baslat - basarisiz olursa task son okunan degerlerle devam eder */
     HAL_StatusTypeDef init_status = MPU6050_Init(&hi2c1);
+    xSemaphoreGive(xI2CMutex);
     snprintf(msg, sizeof(msg), "[IMU] MPU6050 init %s\r\n",
              (init_status == HAL_OK) ? "OK" : "FAIL");
     if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
@@ -167,7 +172,10 @@ void IMU_Task(void *argument) {
     }
 
     for(;;) {
-        if(MPU6050_ReadData(&hi2c1, &mpu_data) == HAL_OK) {
+        xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+        HAL_StatusTypeDef read_status = MPU6050_ReadData(&hi2c1, &mpu_data);
+        xSemaphoreGive(xI2CMutex);
+        if(read_status == HAL_OK) {
             imu_data.accel_x = mpu_data.accel_x;
             imu_data.accel_y = mpu_data.accel_y;
             imu_data.accel_z = mpu_data.accel_z;
@@ -203,7 +211,9 @@ void Baro_Task(void *argument) {
     char msg[96];
 
     /* BMP180'i baslat - basarisiz olursa task son okunan degerlerle devam eder */
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
     HAL_StatusTypeDef init_status = BMP180_Init(&hi2c1);
+    xSemaphoreGive(xI2CMutex);
     snprintf(msg, sizeof(msg), "[BARO] BMP180 init %s\r\n",
              (init_status == HAL_OK) ? "OK" : "FAIL");
     if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
@@ -212,7 +222,10 @@ void Baro_Task(void *argument) {
     }
 
     for(;;) {
-        if(BMP180_ReadData(&hi2c1, &bmp_data) == HAL_OK) {
+        xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+        HAL_StatusTypeDef read_status = BMP180_ReadData(&hi2c1, &bmp_data);
+        xSemaphoreGive(xI2CMutex);
+        if(read_status == HAL_OK) {
             baro_data.pressure    = bmp_data.pressure;
             baro_data.temperature = bmp_data.temperature;
             baro_data.altitude    = bmp_data.altitude;
@@ -234,15 +247,32 @@ void Baro_Task(void *argument) {
     }
 }
 
-/* Mag Task - HMC5883L okuma, 1000ms */
+/* Mag Task - QMC5883P okuma, 1000ms */
 void Mag_Task(void *argument) {
-    Mag_Data_t mag_data;
-    char msg[64];
+    Mag_Data_t mag_data = {0};
+    QMC5883P_Data_t qmc_data;
+    char msg[96];
+
+    xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+    HAL_StatusTypeDef init_status = QMC5883P_Init(&hi2c1);
+    xSemaphoreGive(xI2CMutex);
+
+    snprintf(msg, sizeof(msg), "[MAG] QMC5883P init %s\r\n",
+             (init_status == HAL_OK) ? "OK" : "FAIL");
+    if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+        xSemaphoreGive(xUARTMutex);
+    }
+
     for(;;) {
-        /* TODO: HMC5883L I2C okuma buraya gelecek */
-        mag_data.mag_x = 0.0f;
-        mag_data.mag_y = 0.0f;
-        mag_data.mag_z = 0.0f;
+        xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+        HAL_StatusTypeDef read_status = QMC5883P_ReadData(&hi2c1, &qmc_data);
+        xSemaphoreGive(xI2CMutex);
+        if(read_status == HAL_OK) {
+            mag_data.mag_x = qmc_data.mag_x;
+            mag_data.mag_y = qmc_data.mag_y;
+            mag_data.mag_z = qmc_data.mag_z;
+        }
 
         xQueueSend(xMagQueue, &mag_data, 0);
 

@@ -39,6 +39,15 @@ HAL_StatusTypeDef MPU6050_Init(I2C_HandleTypeDef *hi2c) {
     status = MPU6050_WriteReg(hi2c, MPU6050_REG_ACCEL_CONFIG, 0x00);
     if (status != HAL_OK) return status;
 
+    /* I2C master modunu kapat, bypass'i ac - GY-87'de HMC5883L bu sayede
+     * ana I2C hattinda dogrudan gorunur hale gelir (MPU6050'nin auxiliary
+     * bus'inin arkasinda oldugu icin bypass olmadan hic yanit vermiyor) */
+    status = MPU6050_WriteReg(hi2c, MPU6050_REG_USER_CTRL, 0x00);
+    if (status != HAL_OK) return status;
+
+    status = MPU6050_WriteReg(hi2c, MPU6050_REG_INT_PIN_CFG, 0x02);
+    if (status != HAL_OK) return status;
+
     return HAL_OK;
 }
 

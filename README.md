@@ -37,7 +37,7 @@ Python GCS Dashboard  ←  live HUD, map, FreeRTOS monitor, alerts
 │              STM32F103 — Hardware Layer              │
 │                                                     │
 │  [IMU Task]    [Baro Task]   [Mag Task]             │
-│  MPU6050       BMP180        HMC5883L               │
+│  MPU6050       BMP180        QMC5883P               │
 │  500ms / I2C   2000ms / I2C  1000ms / I2C           │
 │       │              │            │                 │
 │       └──────────────┴────────────┘                 │
@@ -76,10 +76,14 @@ Python GCS Dashboard  ←  live HUD, map, FreeRTOS monitor, alerts
 | Component | Part | Interface | Purpose |
 |-----------|------|-----------|---------|
 | MCU | STM32F103C8T6 (Blue Pill) | — | Main controller |
-| IMU | GY-87 (MPU6050 + HMC5883L + BMP180) | I2C | 10-DOF sensor fusion |
+| IMU | GY-87 (MPU6050 + QMC5883P* + BMP180) | I2C | 10-DOF sensor fusion |
 | CAN Transceiver | SN65HVD230 | CAN | Physical CAN layer |
 | USB-UART | CP2102 | UART | MAVLink to PC |
 | Termination | 120Ω resistor × 2 | CAN bus ends | Signal integrity |
+
+*GY-87 boards are commonly sold with an "HMC5883L" silkscreen, but the actual magnetometer die
+found on this unit (via I2C bus scan, addr `0x2C` instead of `0x1E`) is a QMC5883P clone with a
+completely different register map — the driver targets the real chip, not the label.
 
 ---
 
@@ -88,7 +92,7 @@ Python GCS Dashboard  ←  live HUD, map, FreeRTOS monitor, alerts
 | Task | Priority | Period | Function |
 |------|----------|--------|----------|
 | `IMU_TASK` | High | 500ms | MPU6050 accel + gyro via I2C → Queue |
-| `MAG_TASK` | Medium | 1000ms | HMC5883L magnetometer → Queue |
+| `MAG_TASK` | Medium | 1000ms | QMC5883P magnetometer → Queue |
 | `BARO_TASK` | Medium | 2000ms | BMP180 pressure + temp → Queue |
 | `CAN_TX_TASK` | Medium | triggered | Dequeue → pack → transmit (Mutex protected) |
 | `WDG_TASK` | Low | 1000ms | System health, heap monitor, heartbeat |
@@ -112,7 +116,7 @@ Python GCS Dashboard  ←  live HUD, map, FreeRTOS monitor, alerts
 | Layer | Status | Notes |
 |-------|--------|-------|
 | STM32 FreeRTOS tasks | ✅ Complete | IMU task, CAN TX task |
-| GY-87 I2C driver | 🔄 In progress | MPU6050 + BMP180 ✅ done — HMC5883L pending |
+| GY-87 I2C driver | ✅ Complete | MPU6050 + BMP180 + QMC5883P all done |
 | CAN Bus transmission | ✅ Complete (loopback mode) | SN65HVD230 transceiver |
 | MAVLink encoding | 📋 Planned | mavlink_helpers.h |
 | PX4 SITL integration | 📋 Planned | uXRCE-DDS bridge |
@@ -147,7 +151,7 @@ pip install pymavlink python-can rich websockets numpy
 - [x] STM32 FreeRTOS task skeleton
 - [x] MPU6050 I2C driver (real accel + gyro data)
 - [x] BMP180 I2C driver (real pressure + temp + altitude)
-- [ ] HMC5883L I2C driver
+- [x] QMC5883P I2C driver (real magnetometer data)
 - [x] CAN Bus frame encoding and transmission
 - [ ] MAVLink bridge (STM32 → PC)
 - [ ] PX4 SITL setup and first simulated flight

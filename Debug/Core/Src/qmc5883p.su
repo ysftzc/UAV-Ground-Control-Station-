@@ -1,0 +1,4 @@
+../Core/Src/qmc5883p.c:4:26:QMC5883P_WriteReg	32	static
+../Core/Src/qmc5883p.c:8:26:QMC5883P_ReadRegs	40	static
+../Core/Src/qmc5883p.c:12:19:QMC5883P_Init	24	static
+../Core/Src/qmc5883p.c:47:19:QMC5883P_ReadData	32	static
