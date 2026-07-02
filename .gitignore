@@ -1,1 +1,5 @@
 CLAUDE.md
+
+# STM32CubeIDE build output - fully regenerated on every build, should never be committed
+Debug/
+Release/
