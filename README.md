@@ -152,7 +152,7 @@ pip install pymavlink python-can rich websockets numpy
 - [x] MPU6050 I2C driver (real accel + gyro data)
 - [x] BMP180 I2C driver (real pressure + temp + altitude)
 - [x] QMC5883P I2C driver (real magnetometer data)
-- [ ] Gyro bias + magnetometer hard-iron calibration (written, pending hardware verification)
+- [x] Gyro bias + magnetometer hard-iron calibration (written, pending hardware verification)
 - [x] CAN Bus frame encoding and transmission
 - [ ] MAVLink bridge (STM32 → PC)
 - [ ] PX4 SITL setup and first simulated flight
@@ -166,7 +166,7 @@ pip install pymavlink python-can rich websockets numpy
 
 ## Motivation
 
-Modern defence UAV systems (e.g. Baykar TB2, TAI Aksungur) rely on exactly this architecture: a dedicated embedded sensor node communicating over CAN Bus, a flight controller running on ARM Cortex-M hardware with a real-time OS, and a ground control station processing telemetry in real time. This project implements that full stack from bare-metal firmware to GCS dashboard, using the same protocols (MAVLink, CAN Bus, FreeRTOS) used in production systems.
+Modern defence UAV systems rely on exactly this architecture: a dedicated embedded sensor node communicating over CAN Bus, a flight controller running on ARM Cortex-M hardware with a real-time OS, and a ground control station processing telemetry in real time. This project implements that full stack from bare-metal firmware to GCS dashboard, using the same protocols (MAVLink, CAN Bus, FreeRTOS) used in production systems.
 
 ---
 
