@@ -1,6 +1,0 @@
-../Core/Src/qmc5883p.c:6:26:QMC5883P_WriteReg	32	static
-../Core/Src/qmc5883p.c:10:26:QMC5883P_ReadRegs	40	static
-../Core/Src/qmc5883p.c:14:19:QMC5883P_Init	24	static
-../Core/Src/qmc5883p.c:49:19:QMC5883P_ReadData	32	static
-../Core/Src/qmc5883p.c:70:6:QMC5883P_SetHardIronOffset	24	static
-../Core/Src/qmc5883p.c:76:6:QMC5883P_GetHardIronOffset	24	static

@@ -1,6 +1,0 @@
-../Core/Src/mpu6050.c:6:26:MPU6050_WriteReg	1
-../Core/Src/mpu6050.c:10:26:MPU6050_ReadRegs	1
-../Core/Src/mpu6050.c:14:19:MPU6050_Init	10
-../Core/Src/mpu6050.c:56:19:MPU6050_ReadData	2
-../Core/Src/mpu6050.c:85:19:MPU6050_CalibrateGyro	5
-../Core/Src/mpu6050.c:116:6:MPU6050_GetGyroBias	1
