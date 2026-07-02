@@ -1,4 +1,6 @@
-../Core/Src/mpu6050.c:4:26:MPU6050_WriteReg	32	static
-../Core/Src/mpu6050.c:8:26:MPU6050_ReadRegs	40	static
-../Core/Src/mpu6050.c:12:19:MPU6050_Init	24	static
-../Core/Src/mpu6050.c:54:19:MPU6050_ReadData	48	static
+../Core/Src/mpu6050.c:6:26:MPU6050_WriteReg	32	static
+../Core/Src/mpu6050.c:10:26:MPU6050_ReadRegs	40	static
+../Core/Src/mpu6050.c:14:19:MPU6050_Init	24	static
+../Core/Src/mpu6050.c:56:19:MPU6050_ReadData	48	static
+../Core/Src/mpu6050.c:85:19:MPU6050_CalibrateGyro	72	static
+../Core/Src/mpu6050.c:116:6:MPU6050_GetGyroBias	24	static

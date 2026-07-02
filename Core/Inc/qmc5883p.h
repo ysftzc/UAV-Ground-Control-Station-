@@ -38,6 +38,15 @@ typedef struct {
 HAL_StatusTypeDef QMC5883P_Init(I2C_HandleTypeDef *hi2c);
 HAL_StatusTypeDef QMC5883P_ReadData(I2C_HandleTypeDef *hi2c, QMC5883P_Data_t *data);
 
+/* Hard-iron kalibrasyonu: QMC5883P_ReadData'nin cikardigi sabit ofset (uT).
+ * Ofsetler kartin tum yonlerde dondurulmesiyle toplanan min/max degerlerinden
+ * ((min+max)/2) hesaplanmali - bu hesaplama vTaskDelay gerektirdigi icin
+ * (surucu FreeRTOS'a bagimli olmamali) freertos.c/Mag_Task icinde yapiliyor,
+ * burada sadece sonucun uygulanmasi/okunmasi var. Soft-iron (olcek/aci
+ * bozulmasi) duzeltmesi yok, sadece hard-iron ofset. */
+void QMC5883P_SetHardIronOffset(float offset_x, float offset_y, float offset_z);
+void QMC5883P_GetHardIronOffset(float *offset_x, float *offset_y, float *offset_z);
+
 #ifdef __cplusplus
 }
 #endif

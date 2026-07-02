@@ -152,6 +152,7 @@ pip install pymavlink python-can rich websockets numpy
 - [x] MPU6050 I2C driver (real accel + gyro data)
 - [x] BMP180 I2C driver (real pressure + temp + altitude)
 - [x] QMC5883P I2C driver (real magnetometer data)
+- [ ] Gyro bias + magnetometer hard-iron calibration (written, pending hardware verification)
 - [x] CAN Bus frame encoding and transmission
 - [ ] MAVLink bridge (STM32 → PC)
 - [ ] PX4 SITL setup and first simulated flight

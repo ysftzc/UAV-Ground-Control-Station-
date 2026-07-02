@@ -1,6 +1,8 @@
 /* MPU6050 I2C surucusu - GY-87 modulu icindeki IMU */
 #include "mpu6050.h"
 
+static float s_gyro_bias_x = 0.0f, s_gyro_bias_y = 0.0f, s_gyro_bias_z = 0.0f;
+
 static HAL_StatusTypeDef MPU6050_WriteReg(I2C_HandleTypeDef *hi2c, uint8_t reg, uint8_t value) {
     return HAL_I2C_Mem_Write(hi2c, MPU6050_I2C_ADDR, reg, I2C_MEMADD_SIZE_8BIT, &value, 1, 100);
 }
@@ -73,9 +75,46 @@ HAL_StatusTypeDef MPU6050_ReadData(I2C_HandleTypeDef *hi2c, MPU6050_Data_t *data
     data->accel_y = accel_y_raw / MPU6050_ACCEL_LSB_PER_G;
     data->accel_z = accel_z_raw / MPU6050_ACCEL_LSB_PER_G;
 
-    data->gyro_x = gyro_x_raw / MPU6050_GYRO_LSB_PER_DPS;
-    data->gyro_y = gyro_y_raw / MPU6050_GYRO_LSB_PER_DPS;
-    data->gyro_z = gyro_z_raw / MPU6050_GYRO_LSB_PER_DPS;
+    data->gyro_x = gyro_x_raw / MPU6050_GYRO_LSB_PER_DPS - s_gyro_bias_x;
+    data->gyro_y = gyro_y_raw / MPU6050_GYRO_LSB_PER_DPS - s_gyro_bias_y;
+    data->gyro_z = gyro_z_raw / MPU6050_GYRO_LSB_PER_DPS - s_gyro_bias_z;
 
     return HAL_OK;
+}
+
+HAL_StatusTypeDef MPU6050_CalibrateGyro(I2C_HandleTypeDef *hi2c, uint16_t sample_count) {
+    if (sample_count == 0) {
+        return HAL_ERROR;
+    }
+
+    double sum_x = 0.0, sum_y = 0.0, sum_z = 0.0;
+    uint16_t good = 0;
+    MPU6050_Data_t sample;
+
+    /* Bias henuz sifir oldugu icin MPU6050_ReadData burada ham degeri dondurur */
+    for (uint16_t i = 0; i < sample_count; i++) {
+        if (MPU6050_ReadData(hi2c, &sample) == HAL_OK) {
+            sum_x += sample.gyro_x;
+            sum_y += sample.gyro_y;
+            sum_z += sample.gyro_z;
+            good++;
+        }
+        HAL_Delay(5);
+    }
+
+    if (good == 0) {
+        return HAL_ERROR;
+    }
+
+    s_gyro_bias_x = (float)(sum_x / good);
+    s_gyro_bias_y = (float)(sum_y / good);
+    s_gyro_bias_z = (float)(sum_z / good);
+
+    return HAL_OK;
+}
+
+void MPU6050_GetGyroBias(float *bias_x, float *bias_y, float *bias_z) {
+    *bias_x = s_gyro_bias_x;
+    *bias_y = s_gyro_bias_y;
+    *bias_z = s_gyro_bias_z;
 }

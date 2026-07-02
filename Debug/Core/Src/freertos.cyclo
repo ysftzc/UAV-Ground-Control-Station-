@@ -1,8 +1,9 @@
-../Core/Src/freertos.c:107:6:MX_FREERTOS_Init	1
-../Core/Src/freertos.c:131:13:I2C_Scan	6
-../Core/Src/freertos.c:156:13:QMC_DumpDiag	2
-../Core/Src/freertos.c:174:6:IMU_Task	5
-../Core/Src/freertos.c:226:6:Baro_Task	5
-../Core/Src/freertos.c:269:6:Mag_Task	6
-../Core/Src/freertos.c:316:6:CAN_TX_Task	7
-../Core/Src/freertos.c:386:6:WDG_Task	2
+../Core/Src/freertos.c:111:6:MX_FREERTOS_Init	1
+../Core/Src/freertos.c:144:13:I2C_Scan	6
+../Core/Src/freertos.c:169:6:IMU_Task	9
+../Core/Src/freertos.c:240:6:Baro_Task	5
+../Core/Src/freertos.c:283:6:Mag_Task	19
+../Core/Src/freertos.c:368:6:CAN_TX_Task	7
+../Core/Src/freertos.c:438:6:WDG_Task	3
+../Core/Src/freertos.c:475:6:vApplicationStackOverflowHook	2
+../Core/Src/freertos.c:487:6:vApplicationMallocFailedHook	2

@@ -1,6 +1,8 @@
 /* QMC5883P I2C surucusu - GY-87 modulu icindeki manyetometre (bkz. qmc5883p.h) */
 #include "qmc5883p.h"
 
+static float s_offset_x = 0.0f, s_offset_y = 0.0f, s_offset_z = 0.0f;
+
 static HAL_StatusTypeDef QMC5883P_WriteReg(I2C_HandleTypeDef *hi2c, uint8_t reg, uint8_t value) {
     return HAL_I2C_Mem_Write(hi2c, QMC5883P_I2C_ADDR, reg, I2C_MEMADD_SIZE_8BIT, &value, 1, 100);
 }
@@ -58,9 +60,21 @@ HAL_StatusTypeDef QMC5883P_ReadData(I2C_HandleTypeDef *hi2c, QMC5883P_Data_t *da
     int16_t mag_y_raw = (int16_t)((raw[3] << 8) | raw[2]);
     int16_t mag_z_raw = (int16_t)((raw[5] << 8) | raw[4]);
 
-    data->mag_x = (mag_x_raw / QMC5883P_LSB_PER_GAUSS) * QMC5883P_GAUSS_TO_UT;
-    data->mag_y = (mag_y_raw / QMC5883P_LSB_PER_GAUSS) * QMC5883P_GAUSS_TO_UT;
-    data->mag_z = (mag_z_raw / QMC5883P_LSB_PER_GAUSS) * QMC5883P_GAUSS_TO_UT;
+    data->mag_x = (mag_x_raw / QMC5883P_LSB_PER_GAUSS) * QMC5883P_GAUSS_TO_UT - s_offset_x;
+    data->mag_y = (mag_y_raw / QMC5883P_LSB_PER_GAUSS) * QMC5883P_GAUSS_TO_UT - s_offset_y;
+    data->mag_z = (mag_z_raw / QMC5883P_LSB_PER_GAUSS) * QMC5883P_GAUSS_TO_UT - s_offset_z;
 
     return HAL_OK;
+}
+
+void QMC5883P_SetHardIronOffset(float offset_x, float offset_y, float offset_z) {
+    s_offset_x = offset_x;
+    s_offset_y = offset_y;
+    s_offset_z = offset_z;
+}
+
+void QMC5883P_GetHardIronOffset(float *offset_x, float *offset_y, float *offset_z) {
+    *offset_x = s_offset_x;
+    *offset_y = s_offset_y;
+    *offset_z = s_offset_z;
 }

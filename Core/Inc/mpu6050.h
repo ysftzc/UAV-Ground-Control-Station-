@@ -36,6 +36,13 @@ typedef struct {
 HAL_StatusTypeDef MPU6050_Init(I2C_HandleTypeDef *hi2c);
 HAL_StatusTypeDef MPU6050_ReadData(I2C_HandleTypeDef *hi2c, MPU6050_Data_t *data);
 
+/* Kart sabitken cagrilmali (ort. gyro bias'i olcup MPU6050_ReadData'nin
+ * cikardigi ofset olarak saklar). sample_count okuma yapar, aralarinda
+ * kisa bir HAL_Delay var. Basari/basarisizlik durumunda da bias sifirlanmaz -
+ * en son basarili kalibrasyon degeri korunur. */
+HAL_StatusTypeDef MPU6050_CalibrateGyro(I2C_HandleTypeDef *hi2c, uint16_t sample_count);
+void MPU6050_GetGyroBias(float *bias_x, float *bias_y, float *bias_z);
+
 #ifdef __cplusplus
 }
 #endif

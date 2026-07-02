@@ -35,6 +35,7 @@
 #include "semphr.h"
 #include <stdio.h>
 #include <string.h>
+#include <float.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -81,6 +82,9 @@ typedef struct {
     float mag_x, mag_y, mag_z;
 } Mag_Data_t;
 
+/* Task handle'lari - WDG_Task'tan stack high-water-mark okumak icin */
+TaskHandle_t xImuTaskHandle, xBaroTaskHandle, xMagTaskHandle, xCanTaskHandle, xWdgTaskHandle;
+
 /* CAN handles */
 CAN_TxHeaderTypeDef TxHeader;
 CAN_RxHeaderTypeDef RxHeader;
@@ -116,12 +120,21 @@ void MX_FREERTOS_Init(void) {
     xUARTMutex = xSemaphoreCreateMutex();
     xI2CMutex  = xSemaphoreCreateMutex();
 
-    /* Task'lari olustur */
-    xTaskCreate(IMU_Task,    "IMU_TASK",    256, NULL, 4, NULL);
-    xTaskCreate(Baro_Task,   "BARO_TASK",   128, NULL, 3, NULL);
-    xTaskCreate(Mag_Task,    "MAG_TASK",    128, NULL, 3, NULL);
-    xTaskCreate(CAN_TX_Task, "CAN_TX_TASK", 256, NULL, 3, NULL);
-    xTaskCreate(WDG_Task,    "WDG_TASK",    128, NULL, 1, NULL);
+    /* Task'lari olustur - IMU_TASK/MAG_TASK stack'leri kalibrasyon kodu
+     * (ek float/struct lokal degiskenler + snprintf/HAL I2C nested cagrilar)
+     * icin buyutuldu, bkz. CLAUDE.md "Bilinen Tuzak: stack overflow". 384/256
+     * word'de bile tasma devam ettigi icin 512/512'ye cikarildi ve gercek
+     * kullanimi olcmek icin handle'lar WDG_Task'a aktarildi. WDG_TASK'in kendi
+     * stack'i de (128->256) buyutuldu - hwm print icin eklenen ikinci snprintf +
+     * 5 uxTaskGetStackHighWaterMark cagrisi 128 word'de tasmaya sebep oluyordu.
+     * BARO_TASK 128 word'de kalmisti (hic dokunulmamisti) - IMU/MAG/WDG buyuyunce
+     * sira ona gelince (BMP180 init mesaji basilirken, tam UART transmit ortasinda
+     * donma) o da tasti; 384 word'e cikarildi. Heap 10240'ta hala ~1KB marj var. */
+    xTaskCreate(IMU_Task,    "IMU_TASK",    512, NULL, 4, &xImuTaskHandle);
+    xTaskCreate(Baro_Task,   "BARO_TASK",   384, NULL, 3, &xBaroTaskHandle);
+    xTaskCreate(Mag_Task,    "MAG_TASK",    512, NULL, 3, &xMagTaskHandle);
+    xTaskCreate(CAN_TX_Task, "CAN_TX_TASK", 256, NULL, 3, &xCanTaskHandle);
+    xTaskCreate(WDG_Task,    "WDG_TASK",    256, NULL, 1, &xWdgTaskHandle);
 
     /* Scheduler baslat */
     vTaskStartScheduler();
@@ -163,12 +176,31 @@ void IMU_Task(void *argument) {
 
     /* MPU6050'yi baslat - basarisiz olursa task son okunan degerlerle devam eder */
     HAL_StatusTypeDef init_status = MPU6050_Init(&hi2c1);
+
+    /* Gyro bias kalibrasyonu - kart bu sirada SABIT durmali (~1s, 200 ornek) */
+    HAL_StatusTypeDef gyro_cal_status = HAL_ERROR;
+    if (init_status == HAL_OK) {
+        gyro_cal_status = MPU6050_CalibrateGyro(&hi2c1, 200);
+    }
     xSemaphoreGive(xI2CMutex);
+
     snprintf(msg, sizeof(msg), "[IMU] MPU6050 init %s\r\n",
              (init_status == HAL_OK) ? "OK" : "FAIL");
     if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
         HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
         xSemaphoreGive(xUARTMutex);
+    }
+
+    if (init_status == HAL_OK) {
+        float bx, by, bz;
+        MPU6050_GetGyroBias(&bx, &by, &bz);
+        snprintf(msg, sizeof(msg), "[IMU] gyro kalibrasyon %s bias gx:%d gy:%d gz:%d\r\n",
+                 (gyro_cal_status == HAL_OK) ? "OK" : "FAIL",
+                 (int)(bx * 100), (int)(by * 100), (int)(bz * 100));
+        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+            xSemaphoreGive(xUARTMutex);
+        }
     }
 
     for(;;) {
@@ -262,6 +294,48 @@ void Mag_Task(void *argument) {
     if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
         HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
         xSemaphoreGive(xUARTMutex);
+    }
+
+    /* Hard-iron kalibrasyonu: karti 10sn boyunca tum yonlerde dondurup
+     * min/max eksen degerlerinden ofset = (min+max)/2 hesapla */
+    if (init_status == HAL_OK) {
+        snprintf(msg, sizeof(msg), "[MAG] kalibrasyon basliyor - karti 10sn tum yonlerde dondur\r\n");
+        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+            xSemaphoreGive(xUARTMutex);
+        }
+
+        float min_x = FLT_MAX, max_x = -FLT_MAX;
+        float min_y = FLT_MAX, max_y = -FLT_MAX;
+        float min_z = FLT_MAX, max_z = -FLT_MAX;
+
+        for (int i = 0; i < 100; i++) {
+            xSemaphoreTake(xI2CMutex, portMAX_DELAY);
+            HAL_StatusTypeDef cal_read = QMC5883P_ReadData(&hi2c1, &qmc_data);
+            xSemaphoreGive(xI2CMutex);
+            if (cal_read == HAL_OK) {
+                if (qmc_data.mag_x < min_x) min_x = qmc_data.mag_x;
+                if (qmc_data.mag_x > max_x) max_x = qmc_data.mag_x;
+                if (qmc_data.mag_y < min_y) min_y = qmc_data.mag_y;
+                if (qmc_data.mag_y > max_y) max_y = qmc_data.mag_y;
+                if (qmc_data.mag_z < min_z) min_z = qmc_data.mag_z;
+                if (qmc_data.mag_z > max_z) max_z = qmc_data.mag_z;
+            }
+            vTaskDelay(pdMS_TO_TICKS(100));
+        }
+
+        if (max_x > min_x && max_y > min_y && max_z > min_z) {
+            QMC5883P_SetHardIronOffset((min_x + max_x) / 2.0f, (min_y + max_y) / 2.0f, (min_z + max_z) / 2.0f);
+        }
+
+        float ox, oy, oz;
+        QMC5883P_GetHardIronOffset(&ox, &oy, &oz);
+        snprintf(msg, sizeof(msg), "[MAG] kalibrasyon tamam ofset x:%d y:%d z:%d\r\n",
+                 (int)(ox * 100), (int)(oy * 100), (int)(oz * 100));
+        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+            xSemaphoreGive(xUARTMutex);
+        }
     }
 
     for(;;) {
@@ -362,7 +436,7 @@ void CAN_TX_Task(void *argument) {
 
 /* Watchdog Task - sistem sagligi izleme + LED blink, 1000ms */
 void WDG_Task(void *argument) {
-    char msg[64];
+    char msg[96];
     uint32_t tick = 0;
     for(;;) {
         /* PC13 LED toggle */
@@ -377,7 +451,44 @@ void WDG_Task(void *argument) {
             xSemaphoreGive(xUARTMutex);
         }
 
+        /* Stack high-water-mark (kalan minimum bos stack, WORD cinsinden) -
+         * ilk birkac saniyede stabillesir (kalibrasyon fazi bitince), tuning
+         * icin gercek rakamlari gormek icin gecici olarak eklendi */
+        snprintf(msg, sizeof(msg), "[WDG] hwm(word) imu:%u baro:%u mag:%u can:%u wdg:%u\r\n",
+                 (unsigned)uxTaskGetStackHighWaterMark(xImuTaskHandle),
+                 (unsigned)uxTaskGetStackHighWaterMark(xBaroTaskHandle),
+                 (unsigned)uxTaskGetStackHighWaterMark(xMagTaskHandle),
+                 (unsigned)uxTaskGetStackHighWaterMark(xCanTaskHandle),
+                 (unsigned)uxTaskGetStackHighWaterMark(xWdgTaskHandle));
+        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+            xSemaphoreGive(xUARTMutex);
+        }
+
         vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+/* Stack bir task'in sinirini astiginda buraya duser (configCHECK_FOR_STACK_OVERFLOW=2) -
+ * interrupt'lari kapatip LED'i hizli yanip sondurerek "coktu" durumunu normal calismadan
+ * (1sn'de bir toggle) ve tam donmadan (surekli yanik) ayirt edilebilir kilar. */
+void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
+    (void)xTask;
+    (void)pcTaskName;
+    taskDISABLE_INTERRUPTS();
+    for (;;) {
+        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+        for (volatile uint32_t i = 0; i < 200000; i++) { }
+    }
+}
+
+/* Heap dolduğunda (pvPortMalloc basarisiz) buraya duser - stack overflow hook'undan
+ * daha hizli bir blink deseniyle ayirt edilir. */
+void vApplicationMallocFailedHook(void) {
+    taskDISABLE_INTERRUPTS();
+    for (;;) {
+        HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
+        for (volatile uint32_t i = 0; i < 50000; i++) { }
     }
 }
 
