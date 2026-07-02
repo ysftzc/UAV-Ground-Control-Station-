@@ -31,6 +31,7 @@
 #include "mpu6050.h"
 #include "bmp180.h"
 #include "qmc5883p.h"
+#include "mavlink_bridge.h"
 #include "queue.h"
 #include "semphr.h"
 #include <stdio.h>
@@ -64,7 +65,14 @@ QueueHandle_t xMagQueue;
 /* Mutex handles */
 SemaphoreHandle_t xCANMutex;
 SemaphoreHandle_t xUARTMutex;
-SemaphoreHandle_t xI2CMutex;  /* hi2c1, IMU/Baro/Mag task'lari arasinda paylasiliyor */
+SemaphoreHandle_t xI2CMutex;    /* hi2c1, IMU/Baro/Mag task'lari arasinda paylasiliyor */
+SemaphoreHandle_t xSensorMutex; /* g_sensor_snapshot okuma/yazma korumasi */
+
+/* IMU/Baro/Mag task'larinin en son okudugu deger - MAVLINK_TX_TASK'in
+ * kendi hizinda (queue tuketmeden, "en guncel deger" semantigiyle)
+ * okuyabilmesi icin CAN yolundaki queue'lardan ayri, mutex korumali
+ * paylasilan bir anlik goruntu (snapshot). */
+static MAVLink_SensorSnapshot_t g_sensor_snapshot = {0};
 
 /* Sensor data structs */
 typedef struct {
@@ -83,7 +91,7 @@ typedef struct {
 } Mag_Data_t;
 
 /* Task handle'lari - WDG_Task'tan stack high-water-mark okumak icin */
-TaskHandle_t xImuTaskHandle, xBaroTaskHandle, xMagTaskHandle, xCanTaskHandle, xWdgTaskHandle;
+TaskHandle_t xImuTaskHandle, xBaroTaskHandle, xMagTaskHandle, xCanTaskHandle, xWdgTaskHandle, xMavlinkTaskHandle;
 
 /* CAN handles */
 CAN_TxHeaderTypeDef TxHeader;
@@ -101,6 +109,7 @@ void Baro_Task(void *argument);
 void Mag_Task(void *argument);
 void CAN_TX_Task(void *argument);
 void WDG_Task(void *argument);
+void MAVLink_TX_Task(void *argument);
 /* USER CODE END FunctionPrototypes */
 
 void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
@@ -116,9 +125,10 @@ void MX_FREERTOS_Init(void) {
     xMagQueue  = xQueueCreate(5,  sizeof(Mag_Data_t));
 
     /* Mutex olustur */
-    xCANMutex  = xSemaphoreCreateMutex();
-    xUARTMutex = xSemaphoreCreateMutex();
-    xI2CMutex  = xSemaphoreCreateMutex();
+    xCANMutex    = xSemaphoreCreateMutex();
+    xUARTMutex   = xSemaphoreCreateMutex();
+    xI2CMutex    = xSemaphoreCreateMutex();
+    xSensorMutex = xSemaphoreCreateMutex();
 
     /* Task'lari olustur - IMU_TASK/MAG_TASK stack'leri kalibrasyon kodu
      * (ek float/struct lokal degiskenler + snprintf/HAL I2C nested cagrilar)
@@ -130,11 +140,16 @@ void MX_FREERTOS_Init(void) {
      * BARO_TASK 128 word'de kalmisti (hic dokunulmamisti) - IMU/MAG/WDG buyuyunce
      * sira ona gelince (BMP180 init mesaji basilirken, tam UART transmit ortasinda
      * donma) o da tasti; 384 word'e cikarildi. Heap 10240'ta hala ~1KB marj var. */
-    xTaskCreate(IMU_Task,    "IMU_TASK",    512, NULL, 4, &xImuTaskHandle);
-    xTaskCreate(Baro_Task,   "BARO_TASK",   384, NULL, 3, &xBaroTaskHandle);
-    xTaskCreate(Mag_Task,    "MAG_TASK",    512, NULL, 3, &xMagTaskHandle);
-    xTaskCreate(CAN_TX_Task, "CAN_TX_TASK", 256, NULL, 3, &xCanTaskHandle);
-    xTaskCreate(WDG_Task,    "WDG_TASK",    256, NULL, 1, &xWdgTaskHandle);
+    xTaskCreate(IMU_Task,     "IMU_TASK",     512, NULL, 4, &xImuTaskHandle);
+    xTaskCreate(Baro_Task,    "BARO_TASK",    384, NULL, 3, &xBaroTaskHandle);
+    xTaskCreate(Mag_Task,     "MAG_TASK",     512, NULL, 3, &xMagTaskHandle);
+    xTaskCreate(CAN_TX_Task,  "CAN_TX_TASK",  256, NULL, 3, &xCanTaskHandle);
+    /* mavlink_message_t + mavlink_msg_to_send_buffer'in buf[MAVLINK_MAX_PACKET_LEN]
+     * dizisi (~280 byte) iki ayri fonksiyon frame'inde ust uste biniyor -
+     * IMU/MAG'da yasadigimiz stack-tasma dersini burada da uygulayip 512
+     * word'den basliyoruz, tahmin edip kucuk verip sonra buyutmuyoruz. */
+    xTaskCreate(MAVLink_TX_Task, "MAVLINK_TASK", 512, NULL, 3, &xMavlinkTaskHandle);
+    xTaskCreate(WDG_Task,     "WDG_TASK",     256, NULL, 1, &xWdgTaskHandle);
 
     /* Scheduler baslat */
     vTaskStartScheduler();
@@ -214,6 +229,16 @@ void IMU_Task(void *argument) {
             imu_data.gyro_x  = mpu_data.gyro_x;
             imu_data.gyro_y  = mpu_data.gyro_y;
             imu_data.gyro_z  = mpu_data.gyro_z;
+
+            if (xSemaphoreTake(xSensorMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+                g_sensor_snapshot.accel_x = imu_data.accel_x;
+                g_sensor_snapshot.accel_y = imu_data.accel_y;
+                g_sensor_snapshot.accel_z = imu_data.accel_z;
+                g_sensor_snapshot.gyro_x  = imu_data.gyro_x;
+                g_sensor_snapshot.gyro_y  = imu_data.gyro_y;
+                g_sensor_snapshot.gyro_z  = imu_data.gyro_z;
+                xSemaphoreGive(xSensorMutex);
+            }
         }
 
         xQueueSend(xIMUQueue, &imu_data, 0);
@@ -261,6 +286,13 @@ void Baro_Task(void *argument) {
             baro_data.pressure    = bmp_data.pressure;
             baro_data.temperature = bmp_data.temperature;
             baro_data.altitude    = bmp_data.altitude;
+
+            if (xSemaphoreTake(xSensorMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+                g_sensor_snapshot.pressure    = baro_data.pressure;
+                g_sensor_snapshot.temperature = baro_data.temperature;
+                g_sensor_snapshot.altitude    = baro_data.altitude;
+                xSemaphoreGive(xSensorMutex);
+            }
         }
 
         xQueueSend(xBaroQueue, &baro_data, 0);
@@ -346,6 +378,13 @@ void Mag_Task(void *argument) {
             mag_data.mag_x = qmc_data.mag_x;
             mag_data.mag_y = qmc_data.mag_y;
             mag_data.mag_z = qmc_data.mag_z;
+
+            if (xSemaphoreTake(xSensorMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+                g_sensor_snapshot.mag_x = mag_data.mag_x;
+                g_sensor_snapshot.mag_y = mag_data.mag_y;
+                g_sensor_snapshot.mag_z = mag_data.mag_z;
+                xSemaphoreGive(xSensorMutex);
+            }
         }
 
         xQueueSend(xMagQueue, &mag_data, 0);
@@ -434,6 +473,36 @@ void CAN_TX_Task(void *argument) {
     }
 }
 
+/* MAVLink TX Task - HEARTBEAT (1Hz, zorunlu) + HIL_SENSOR (10Hz), UART uzerinden.
+ * HIL_SENSOR, PX4 SITL'in HIL modunun sensor verisi icin bekledigi mesaj -
+ * roadmap'teki "fiziksel IMU -> PX4 SITL" hedefine dogrudan hizmet eder.
+ * NOT: IMU/Baro/Mag task'lari kendi periyotlarinda (500/2000/1000ms) tazeleniyor;
+ * bu task 10Hz'de gonderim yapar ama tazelenmeler arasinda ayni degeri tekrar
+ * yollar (tutma/hold semantigi, standart bir HIL bridge davranisi). PX4'un
+ * gercek HIL modu >100Hz IMU bekler - bu, sensor donanimimizin fiziksel
+ * limiti; ileride IMU_Task periyodu kisaltilarak iyilestirilebilir. */
+void MAVLink_TX_Task(void *argument) {
+    MAVLink_SensorSnapshot_t snapshot = {0};
+    uint32_t iteration = 0;
+
+    for(;;) {
+        if (xSemaphoreTake(xSensorMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+            snapshot = g_sensor_snapshot;
+            xSemaphoreGive(xSensorMutex);
+        }
+
+        MAVLink_SendHilSensor(&huart1, xUARTMutex, &snapshot, (uint64_t)HAL_GetTick() * 1000ULL);
+
+        /* HEARTBEAT 1Hz (10 iterasyonda bir, 10*100ms=1000ms) */
+        if (iteration % 10 == 0) {
+            MAVLink_SendHeartbeat(&huart1, xUARTMutex);
+        }
+        iteration++;
+
+        vTaskDelay(pdMS_TO_TICKS(100));
+    }
+}
+
 /* Watchdog Task - sistem sagligi izleme + LED blink, 1000ms */
 void WDG_Task(void *argument) {
     char msg[96];
@@ -454,11 +523,12 @@ void WDG_Task(void *argument) {
         /* Stack high-water-mark (kalan minimum bos stack, WORD cinsinden) -
          * ilk birkac saniyede stabillesir (kalibrasyon fazi bitince), tuning
          * icin gercek rakamlari gormek icin gecici olarak eklendi */
-        snprintf(msg, sizeof(msg), "[WDG] hwm(word) imu:%u baro:%u mag:%u can:%u wdg:%u\r\n",
+        snprintf(msg, sizeof(msg), "[WDG] hwm(word) imu:%u baro:%u mag:%u can:%u mav:%u wdg:%u\r\n",
                  (unsigned)uxTaskGetStackHighWaterMark(xImuTaskHandle),
                  (unsigned)uxTaskGetStackHighWaterMark(xBaroTaskHandle),
                  (unsigned)uxTaskGetStackHighWaterMark(xMagTaskHandle),
                  (unsigned)uxTaskGetStackHighWaterMark(xCanTaskHandle),
+                 (unsigned)uxTaskGetStackHighWaterMark(xMavlinkTaskHandle),
                  (unsigned)uxTaskGetStackHighWaterMark(xWdgTaskHandle));
         if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
             HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
