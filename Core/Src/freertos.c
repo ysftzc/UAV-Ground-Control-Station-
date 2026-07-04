@@ -35,6 +35,7 @@
 #include "queue.h"
 #include "semphr.h"
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 #include <float.h>
 /* USER CODE END Includes */
@@ -117,6 +118,28 @@ void MX_FREERTOS_Init(void); /* (MISRA C 2004 rule 8.1) */
 /* Private application code --------------------------------------------------*/
 /* USER CODE BEGIN Application */
 
+/* Debug/telemetri UART ayrimi: Release build'de (DEBUG tanimli degil) bu
+ * fonksiyon no-op'a donusur, UART1 sadece MAVLink binary akisini tasir.
+ * Debug build'de (DEBUG tanimli) insan-okunabilir loglar eskisi gibi basilir.
+ * Gercek savunma sanayi/havacilik firmware'lerinde debug konsolu ile telemetri
+ * hatti asla ayni fiziksel kanalda karistirilmaz - bu ayrim onu taklit eder. */
+#ifdef DEBUG
+static void Debug_UartPrint(const char *fmt, ...) {
+    char msg[96];
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(msg, sizeof(msg), fmt, args);
+    va_end(args);
+    if (xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
+        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
+        xSemaphoreGive(xUARTMutex);
+    }
+}
+#define DBG_PRINT(...) Debug_UartPrint(__VA_ARGS__)
+#else
+#define DBG_PRINT(...) ((void)0)
+#endif
+
 void MX_FREERTOS_Init(void) {
 
     /* Queue olustur */
@@ -157,26 +180,17 @@ void MX_FREERTOS_Init(void) {
 
 /* I2C bus tarama - hangi adreste cihaz ACK veriyor gormek icin (debug) */
 static void I2C_Scan(I2C_HandleTypeDef *hi2c) {
-    char msg[64];
     int found = 0;
 
     for (uint8_t addr = 1; addr < 128; addr++) {
         if (HAL_I2C_IsDeviceReady(hi2c, (uint16_t)(addr << 1), 2, 5) == HAL_OK) {
-            snprintf(msg, sizeof(msg), "[I2C] cihaz bulundu: 0x%02X\r\n", addr);
-            if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-                HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
-                xSemaphoreGive(xUARTMutex);
-            }
+            DBG_PRINT("[I2C] cihaz bulundu: 0x%02X\r\n", addr);
             found++;
         }
     }
 
     if (found == 0) {
-        snprintf(msg, sizeof(msg), "[I2C] bus taramasi: hicbir cihaz yanit vermedi\r\n");
-        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
-            xSemaphoreGive(xUARTMutex);
-        }
+        DBG_PRINT("[I2C] bus taramasi: hicbir cihaz yanit vermedi\r\n");
     }
 }
 
@@ -184,7 +198,6 @@ static void I2C_Scan(I2C_HandleTypeDef *hi2c) {
 void IMU_Task(void *argument) {
     IMU_Data_t imu_data = {0};
     MPU6050_Data_t mpu_data;
-    char msg[96];
 
     xSemaphoreTake(xI2CMutex, portMAX_DELAY);
     I2C_Scan(&hi2c1);
@@ -193,29 +206,21 @@ void IMU_Task(void *argument) {
     HAL_StatusTypeDef init_status = MPU6050_Init(&hi2c1);
 
     /* Gyro bias kalibrasyonu - kart bu sirada SABIT durmali (~1s, 200 ornek) */
-    HAL_StatusTypeDef gyro_cal_status = HAL_ERROR;
+    /* Release build'de DBG_PRINT no-op oldugu icin bu sadece debug amacli */
+    HAL_StatusTypeDef gyro_cal_status __attribute__((unused)) = HAL_ERROR;
     if (init_status == HAL_OK) {
         gyro_cal_status = MPU6050_CalibrateGyro(&hi2c1, 200);
     }
     xSemaphoreGive(xI2CMutex);
 
-    snprintf(msg, sizeof(msg), "[IMU] MPU6050 init %s\r\n",
-             (init_status == HAL_OK) ? "OK" : "FAIL");
-    if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
-        xSemaphoreGive(xUARTMutex);
-    }
+    DBG_PRINT("[IMU] MPU6050 init %s\r\n", (init_status == HAL_OK) ? "OK" : "FAIL");
 
     if (init_status == HAL_OK) {
         float bx, by, bz;
         MPU6050_GetGyroBias(&bx, &by, &bz);
-        snprintf(msg, sizeof(msg), "[IMU] gyro kalibrasyon %s bias gx:%d gy:%d gz:%d\r\n",
-                 (gyro_cal_status == HAL_OK) ? "OK" : "FAIL",
-                 (int)(bx * 100), (int)(by * 100), (int)(bz * 100));
-        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
-            xSemaphoreGive(xUARTMutex);
-        }
+        DBG_PRINT("[IMU] gyro kalibrasyon %s bias gx:%d gy:%d gz:%d\r\n",
+                  (gyro_cal_status == HAL_OK) ? "OK" : "FAIL",
+                  (int)(bx * 100), (int)(by * 100), (int)(bz * 100));
     }
 
     for(;;) {
@@ -244,18 +249,13 @@ void IMU_Task(void *argument) {
         xQueueSend(xIMUQueue, &imu_data, 0);
 
         /* UART debug - integer olarak gonder (float printf gerektirmez) */
-        snprintf(msg, sizeof(msg), "[IMU] ax:%d ay:%d az:%d gx:%d gy:%d gz:%d\r\n",
-                 (int)(imu_data.accel_x * 100),
-                 (int)(imu_data.accel_y * 100),
-                 (int)(imu_data.accel_z * 100),
-                 (int)(imu_data.gyro_x  * 100),
-                 (int)(imu_data.gyro_y  * 100),
-                 (int)(imu_data.gyro_z  * 100));
-
-        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
-            xSemaphoreGive(xUARTMutex);
-        }
+        DBG_PRINT("[IMU] ax:%d ay:%d az:%d gx:%d gy:%d gz:%d\r\n",
+                  (int)(imu_data.accel_x * 100),
+                  (int)(imu_data.accel_y * 100),
+                  (int)(imu_data.accel_z * 100),
+                  (int)(imu_data.gyro_x  * 100),
+                  (int)(imu_data.gyro_y  * 100),
+                  (int)(imu_data.gyro_z  * 100));
 
         vTaskDelay(pdMS_TO_TICKS(500));
     }
@@ -265,18 +265,13 @@ void IMU_Task(void *argument) {
 void Baro_Task(void *argument) {
     Baro_Data_t baro_data = {0};
     BMP180_Data_t bmp_data;
-    char msg[96];
 
     /* BMP180'i baslat - basarisiz olursa task son okunan degerlerle devam eder */
     xSemaphoreTake(xI2CMutex, portMAX_DELAY);
-    HAL_StatusTypeDef init_status = BMP180_Init(&hi2c1);
+    /* Release build'de DBG_PRINT no-op oldugu icin bu sadece debug amacli */
+    HAL_StatusTypeDef init_status __attribute__((unused)) = BMP180_Init(&hi2c1);
     xSemaphoreGive(xI2CMutex);
-    snprintf(msg, sizeof(msg), "[BARO] BMP180 init %s\r\n",
-             (init_status == HAL_OK) ? "OK" : "FAIL");
-    if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
-        xSemaphoreGive(xUARTMutex);
-    }
+    DBG_PRINT("[BARO] BMP180 init %s\r\n", (init_status == HAL_OK) ? "OK" : "FAIL");
 
     for(;;) {
         xSemaphoreTake(xI2CMutex, portMAX_DELAY);
@@ -297,15 +292,10 @@ void Baro_Task(void *argument) {
 
         xQueueSend(xBaroQueue, &baro_data, 0);
 
-        snprintf(msg, sizeof(msg), "[BARO] p:%d t:%d alt:%d\r\n",
-                 (int)(baro_data.pressure    * 100),
-                 (int)(baro_data.temperature * 100),
-                 (int)(baro_data.altitude    * 100));
-
-        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
-            xSemaphoreGive(xUARTMutex);
-        }
+        DBG_PRINT("[BARO] p:%d t:%d alt:%d\r\n",
+                  (int)(baro_data.pressure    * 100),
+                  (int)(baro_data.temperature * 100),
+                  (int)(baro_data.altitude    * 100));
 
         vTaskDelay(pdMS_TO_TICKS(2000));
     }
@@ -315,27 +305,17 @@ void Baro_Task(void *argument) {
 void Mag_Task(void *argument) {
     Mag_Data_t mag_data = {0};
     QMC5883P_Data_t qmc_data;
-    char msg[96];
 
     xSemaphoreTake(xI2CMutex, portMAX_DELAY);
     HAL_StatusTypeDef init_status = QMC5883P_Init(&hi2c1);
     xSemaphoreGive(xI2CMutex);
 
-    snprintf(msg, sizeof(msg), "[MAG] QMC5883P init %s\r\n",
-             (init_status == HAL_OK) ? "OK" : "FAIL");
-    if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-        HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
-        xSemaphoreGive(xUARTMutex);
-    }
+    DBG_PRINT("[MAG] QMC5883P init %s\r\n", (init_status == HAL_OK) ? "OK" : "FAIL");
 
     /* Hard-iron kalibrasyonu: karti 10sn boyunca tum yonlerde dondurup
      * min/max eksen degerlerinden ofset = (min+max)/2 hesapla */
     if (init_status == HAL_OK) {
-        snprintf(msg, sizeof(msg), "[MAG] kalibrasyon basliyor - karti 10sn tum yonlerde dondur\r\n");
-        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
-            xSemaphoreGive(xUARTMutex);
-        }
+        DBG_PRINT("[MAG] kalibrasyon basliyor - karti 10sn tum yonlerde dondur\r\n");
 
         float min_x = FLT_MAX, max_x = -FLT_MAX;
         float min_y = FLT_MAX, max_y = -FLT_MAX;
@@ -362,12 +342,8 @@ void Mag_Task(void *argument) {
 
         float ox, oy, oz;
         QMC5883P_GetHardIronOffset(&ox, &oy, &oz);
-        snprintf(msg, sizeof(msg), "[MAG] kalibrasyon tamam ofset x:%d y:%d z:%d\r\n",
-                 (int)(ox * 100), (int)(oy * 100), (int)(oz * 100));
-        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
-            xSemaphoreGive(xUARTMutex);
-        }
+        DBG_PRINT("[MAG] kalibrasyon tamam ofset x:%d y:%d z:%d\r\n",
+                  (int)(ox * 100), (int)(oy * 100), (int)(oz * 100));
     }
 
     for(;;) {
@@ -389,15 +365,10 @@ void Mag_Task(void *argument) {
 
         xQueueSend(xMagQueue, &mag_data, 0);
 
-        snprintf(msg, sizeof(msg), "[MAG] mx:%d my:%d mz:%d\r\n",
-                 (int)(mag_data.mag_x * 100),
-                 (int)(mag_data.mag_y * 100),
-                 (int)(mag_data.mag_z * 100));
-
-        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
-            xSemaphoreGive(xUARTMutex);
-        }
+        DBG_PRINT("[MAG] mx:%d my:%d mz:%d\r\n",
+                  (int)(mag_data.mag_x * 100),
+                  (int)(mag_data.mag_y * 100),
+                  (int)(mag_data.mag_z * 100));
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
@@ -505,35 +476,27 @@ void MAVLink_TX_Task(void *argument) {
 
 /* Watchdog Task - sistem sagligi izleme + LED blink, 1000ms */
 void WDG_Task(void *argument) {
-    char msg[96];
-    uint32_t tick = 0;
+    /* Release build'de DBG_PRINT no-op oldugu icin bu sadece debug amacli */
+    uint32_t tick __attribute__((unused)) = 0;
     for(;;) {
         /* PC13 LED toggle */
         HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 
         /* Heap monitor + UART */
-        uint32_t heap_free = xPortGetFreeHeapSize();
-        snprintf(msg, sizeof(msg), "[WDG] tick:%lu heap:%lu free\r\n", tick++, heap_free);
-
-        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
-            xSemaphoreGive(xUARTMutex);
-        }
+        uint32_t heap_free __attribute__((unused)) = xPortGetFreeHeapSize();
+        DBG_PRINT("[WDG] tick:%lu heap:%lu free\r\n", tick, heap_free);
+        tick++;
 
         /* Stack high-water-mark (kalan minimum bos stack, WORD cinsinden) -
          * ilk birkac saniyede stabillesir (kalibrasyon fazi bitince), tuning
          * icin gercek rakamlari gormek icin gecici olarak eklendi */
-        snprintf(msg, sizeof(msg), "[WDG] hwm(word) imu:%u baro:%u mag:%u can:%u mav:%u wdg:%u\r\n",
-                 (unsigned)uxTaskGetStackHighWaterMark(xImuTaskHandle),
-                 (unsigned)uxTaskGetStackHighWaterMark(xBaroTaskHandle),
-                 (unsigned)uxTaskGetStackHighWaterMark(xMagTaskHandle),
-                 (unsigned)uxTaskGetStackHighWaterMark(xCanTaskHandle),
-                 (unsigned)uxTaskGetStackHighWaterMark(xMavlinkTaskHandle),
-                 (unsigned)uxTaskGetStackHighWaterMark(xWdgTaskHandle));
-        if(xSemaphoreTake(xUARTMutex, pdMS_TO_TICKS(10)) == pdTRUE) {
-            HAL_UART_Transmit(&huart1, (uint8_t*)msg, strlen(msg), 100);
-            xSemaphoreGive(xUARTMutex);
-        }
+        DBG_PRINT("[WDG] hwm(word) imu:%u baro:%u mag:%u can:%u mav:%u wdg:%u\r\n",
+                  (unsigned)uxTaskGetStackHighWaterMark(xImuTaskHandle),
+                  (unsigned)uxTaskGetStackHighWaterMark(xBaroTaskHandle),
+                  (unsigned)uxTaskGetStackHighWaterMark(xMagTaskHandle),
+                  (unsigned)uxTaskGetStackHighWaterMark(xCanTaskHandle),
+                  (unsigned)uxTaskGetStackHighWaterMark(xMavlinkTaskHandle),
+                  (unsigned)uxTaskGetStackHighWaterMark(xWdgTaskHandle));
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }

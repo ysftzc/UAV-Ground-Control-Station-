@@ -118,7 +118,7 @@ completely different register map — the driver targets the real chip, not the 
 | STM32 FreeRTOS tasks | ✅ Complete | IMU task, CAN TX task |
 | GY-87 I2C driver | ✅ Complete | MPU6050 + BMP180 + QMC5883P all done |
 | CAN Bus transmission | ✅ Complete (loopback mode) | SN65HVD230 transceiver |
-| MAVLink encoding | 🔄 Written, pending hardware verification | Official mavlink/c_library_v2, HEARTBEAT + HIL_SENSOR |
+| MAVLink encoding | ✅ Verified on hardware | Official mavlink/c_library_v2, HEARTBEAT + HIL_SENSOR |
 | PX4 SITL integration | 📋 Planned | uXRCE-DDS bridge |
 | ROS2 software layer | 📋 Planned | px4_ros2 + Nav2 |
 | Python GCS dashboard | 📋 Planned | rich + WebSocket |
@@ -154,7 +154,7 @@ pip install pymavlink python-can rich websockets numpy
 - [x] QMC5883P I2C driver (real magnetometer data)
 - [x] Gyro bias + magnetometer hard-iron calibration (verified on hardware)
 - [x] CAN Bus frame encoding and transmission
-- [ ] MAVLink bridge (STM32 → PC) — HEARTBEAT + HIL_SENSOR written, pending hardware verification
+- [x] MAVLink bridge (STM32 → PC) — HEARTBEAT + HIL_SENSOR verified on hardware
 - [ ] PX4 SITL setup and first simulated flight
 - [ ] Hardware-in-the-loop: real IMU → PX4 SITL
 - [ ] ROS2 integration (px4_ros2, Nav2, Kalman node)
