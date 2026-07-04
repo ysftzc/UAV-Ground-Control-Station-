@@ -45,7 +45,7 @@ Python GCS Dashboard  ←  live HUD, map, FreeRTOS monitor, alerts
 │              [CAN TX Task]                          │
 │         CAN Bus 500kbps / ID: 0x101–0x10F           │
 └──────────────────────┬──────────────────────────────┘
-                       │ MAVLink / UART (CP2102)
+                       │ MAVLink / UART (USB-TTL adaptör)
 ┌──────────────────────▼──────────────────────────────┐
 │           PX4 SITL — Flight Control Layer            │
 │                                                     │
@@ -78,7 +78,7 @@ Python GCS Dashboard  ←  live HUD, map, FreeRTOS monitor, alerts
 | MCU | STM32F103C8T6 (Blue Pill) | — | Main controller |
 | IMU | GY-87 (MPU6050 + QMC5883P* + BMP180) | I2C | 10-DOF sensor fusion |
 | CAN Transceiver | SN65HVD230 | CAN | Physical CAN layer |
-| USB-UART | CP2102 | UART | MAVLink to PC |
+| USB-UART | Generic USB-to-TTL adapter (PL2303 chip) | UART | MAVLink to PC |
 | Termination | 120Ω resistor × 2 | CAN bus ends | Signal integrity |
 
 *GY-87 boards are commonly sold with an "HMC5883L" silkscreen, but the actual magnetometer die

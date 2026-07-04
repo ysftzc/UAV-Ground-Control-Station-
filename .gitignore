@@ -3,3 +3,8 @@ CLAUDE.md
 # STM32CubeIDE build output - fully regenerated on every build, should never be committed
 Debug/
 Release/
+
+# Python virtual environment for ground-station-side tooling (pymavlink, ROS2 bridge, GCS dashboard)
+.venv/
+__pycache__/
+*.pyc
