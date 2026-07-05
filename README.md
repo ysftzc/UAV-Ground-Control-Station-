@@ -119,7 +119,8 @@ completely different register map — the driver targets the real chip, not the 
 | GY-87 I2C driver | ✅ Complete | MPU6050 + BMP180 + QMC5883P all done |
 | CAN Bus transmission | ✅ Complete (loopback mode) | SN65HVD230 transceiver |
 | MAVLink encoding | ✅ Verified on hardware | Official mavlink/c_library_v2, HEARTBEAT + HIL_SENSOR |
-| PX4 SITL integration | 📋 Planned | uXRCE-DDS bridge |
+| PX4 SITL first flight | ✅ Complete | Gazebo (`gz_x500`), arm → takeoff → land verified via commander log |
+| PX4 SITL HIL bridge | 🔄 In progress | `tools/hil_bridge.py` forwards real STM32 sensors into PX4's HITL link; boots and processes real data, EKF2/baro tuning ongoing |
 | ROS2 software layer | 📋 Planned | px4_ros2 + Nav2 |
 | Python GCS dashboard | 📋 Planned | rich + WebSocket |
 
@@ -133,7 +134,7 @@ sudo apt install ros-jazzy-desktop
 
 # PX4 SITL
 git clone https://github.com/PX4/PX4-Autopilot.git
-cd PX4-Autopilot && make px4_sitl gazebo
+cd PX4-Autopilot && make px4_sitl gz_x500
 
 # Python
 pip install pymavlink python-can rich websockets numpy
@@ -155,8 +156,8 @@ pip install pymavlink python-can rich websockets numpy
 - [x] Gyro bias + magnetometer hard-iron calibration (verified on hardware)
 - [x] CAN Bus frame encoding and transmission
 - [x] MAVLink bridge (STM32 → PC) — HEARTBEAT + HIL_SENSOR verified on hardware
-- [ ] PX4 SITL setup and first simulated flight
-- [ ] Hardware-in-the-loop: real IMU → PX4 SITL
+- [x] PX4 SITL setup and first simulated flight (Gazebo `gz_x500`, arm → takeoff → land)
+- [ ] Hardware-in-the-loop: real IMU → PX4 SITL — bridge tool built and connecting; EKF2/baro tuning in progress
 - [ ] ROS2 integration (px4_ros2, Nav2, Kalman node)
 - [ ] Python GCS dashboard (HUD + map + alerts)
 - [ ] Demo video: physical STM32 movement → Gazebo drone response
