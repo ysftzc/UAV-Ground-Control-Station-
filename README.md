@@ -121,6 +121,7 @@ completely different register map — the driver targets the real chip, not the 
 | MAVLink encoding | ✅ Verified on hardware | Official mavlink/c_library_v2, HEARTBEAT + HIL_SENSOR |
 | PX4 SITL first flight | ✅ Complete | Gazebo (`gz_x500`), arm → takeoff → land verified via commander log |
 | PX4 SITL HIL bridge | ✅ Complete | `tools/hil_bridge.py` forwards real STM32 sensors into PX4's HITL link at 50Hz (dithered resend); EKF2 runs clean, live `ATTITUDE` streamed from real hardware |
+| Gazebo visualization | ✅ Complete | `tools/attitude_to_gazebo.py` teleports a model's pose from PX4's live attitude estimate; physically tilting the board visibly moves it in Gazebo |
 | ROS2 software layer | 📋 Planned | px4_ros2 + Nav2 |
 | Python GCS dashboard | 📋 Planned | rich + WebSocket |
 
@@ -158,9 +159,10 @@ pip install pymavlink python-can rich websockets numpy
 - [x] MAVLink bridge (STM32 → PC) — HEARTBEAT + HIL_SENSOR verified on hardware
 - [x] PX4 SITL setup and first simulated flight (Gazebo `gz_x500`, arm → takeoff → land)
 - [x] Hardware-in-the-loop: real IMU → PX4 SITL — EKF2 runs clean on real sensor data, live attitude estimate verified
+- [x] Gazebo visualization: PX4 attitude → live model pose — physical tilt verified moving the model in real time
 - [ ] ROS2 integration (px4_ros2, Nav2, Kalman node)
 - [ ] Python GCS dashboard (HUD + map + alerts)
-- [ ] Demo video: physical STM32 movement → Gazebo drone response
+- [ ] Demo video: physical STM32 movement → Gazebo drone response (recording)
 - [ ] GitHub Actions CI pipeline
 
 ---
