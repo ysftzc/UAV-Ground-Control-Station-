@@ -9,13 +9,24 @@ PX4 side: run SITL in HITL mode first (no gz/jmavsim visual sim):
 
 That starts `simulator_mavlink` listening as a TCP server on 127.0.0.1:4560.
 
+Rate note: the STM32 firmware only transmits HIL_SENSOR at ~10 Hz (it holds
+the last I2C reading between its slower sensor task periods - see the comment
+above MAVLink_TX_Task in Core/Src/freertos.c). PX4's HITL link expects a much
+higher feed rate or it flags the baro/IMU as STALE and EKF2 refuses to start.
+Rather than reflashing firmware to transmit faster, this bridge holds the
+latest STM32 snapshot and *resends* it to PX4 on its own high-rate timer
+(RESEND_RATE_HZ) - same "hold" semantics, just applied on the PC side where
+it's cheap to iterate on.
+
 Usage:
     .venv/bin/python tools/hil_bridge.py [--serial-port /dev/ttyUSB0] [--baud 115200]
                                           [--px4-host 127.0.0.1] [--px4-port 4560]
 """
 
 import argparse
+import random
 import sys
+import threading
 import time
 
 from pymavlink import mavutil
@@ -26,6 +37,28 @@ FAKE_LAT_DEG = 39.7767
 FAKE_LON_DEG = 30.5206
 FAKE_ALT_M = 800.0
 GPS_UPDATE_PERIOD_S = 0.2  # 5 Hz, well within what HIL_GPS needs
+
+RESEND_RATE_HZ = 50  # PX4-facing rate; decoupled from the STM32's ~10 Hz native rate
+
+# PX4's DataValidator flags a sensor STALE if it reports the exact same
+# bit-identical value too many times in a row (a stuck-sensor failsafe - see
+# DataValidator::set_equal_value_threshold). Since we resend the same cached
+# STM32 snapshot between its real ~10 Hz updates, every field would otherwise
+# be bit-identical across dozens of resends. Dither each resend by an amount
+# well under the sensor's real noise floor to avoid false-positiving that
+# check without fabricating meaningfully different readings.
+JITTER = {
+    "acc": 0.005,     # m/s^2
+    "gyro": 0.0005,   # rad/s
+    "mag": 0.001,     # gauss
+    "pressure": 0.01,  # hPa
+    "alt": 0.01,      # m
+    "temp": 0.01,     # degC
+}
+
+
+def dither(value, scale):
+    return value + random.uniform(-scale, scale)
 
 
 def main():
@@ -47,39 +80,39 @@ def main():
                                       source_component=mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1)
     print("[*] PX4 baglandi.")
 
-    hil_sensor_count = 0
-    last_gps_sent = 0.0
+    lock = threading.Lock()
+    latest = {"msg": None, "stm32_count": 0}
+    stop = threading.Event()
     t_start = time.time()
 
-    try:
-        while True:
-            msg = stm32.recv_match(blocking=True, timeout=2)
-            if msg is None:
-                print("[!] STM32'den 2sn icinde veri gelmedi")
-                continue
+    def resend_loop():
+        sent_count = 0
+        last_gps_sent = 0.0
+        period = 1.0 / RESEND_RATE_HZ
 
-            mtype = msg.get_type()
-            if mtype == "BAD_DATA":
-                continue
+        while not stop.is_set():
+            loop_start = time.time()
 
-            if mtype == "HIL_SENSOR":
-                hil_sensor_count += 1
+            with lock:
+                msg = latest["msg"]
+
+            if msg is not None:
                 time_usec = int((time.time() - t_start) * 1e6)
-
                 px4.mav.hil_sensor_send(
                     time_usec,
-                    msg.xacc, msg.yacc, msg.zacc,
-                    msg.xgyro, msg.ygyro, msg.zgyro,
-                    msg.xmag, msg.ymag, msg.zmag,
-                    msg.abs_pressure, msg.diff_pressure, msg.pressure_alt,
-                    msg.temperature,
+                    dither(msg.xacc, JITTER["acc"]), dither(msg.yacc, JITTER["acc"]),
+                    dither(msg.zacc, JITTER["acc"]),
+                    dither(msg.xgyro, JITTER["gyro"]), dither(msg.ygyro, JITTER["gyro"]),
+                    dither(msg.zgyro, JITTER["gyro"]),
+                    dither(msg.xmag, JITTER["mag"]), dither(msg.ymag, JITTER["mag"]),
+                    dither(msg.zmag, JITTER["mag"]),
+                    dither(msg.abs_pressure, JITTER["pressure"]), msg.diff_pressure,
+                    dither(msg.pressure_alt, JITTER["alt"]),
+                    dither(msg.temperature, JITTER["temp"]),
                     msg.fields_updated,
                     0,  # id: primary IMU, drives PX4 lockstep clock
                 )
-
-                if hil_sensor_count % 100 == 0:
-                    print(f"[*] {hil_sensor_count} HIL_SENSOR PX4'e iletildi "
-                          f"(son: acc={msg.xacc:.2f},{msg.yacc:.2f},{msg.zacc:.2f})")
+                sent_count += 1
 
                 now = time.time()
                 if now - last_gps_sent > GPS_UPDATE_PERIOD_S:
@@ -96,15 +129,45 @@ def main():
                         satellites_visible=10,
                     )
 
-            # drain anything PX4 sends back (e.g. HIL_ACTUATOR_CONTROLS) so the
-            # socket buffer doesn't fill up; we don't act on it in this bridge.
+                if sent_count % (RESEND_RATE_HZ * 5) == 0:
+                    with lock:
+                        stm32_count = latest["stm32_count"]
+                    print(f"[*] PX4'e {sent_count} HIL_SENSOR gonderildi "
+                          f"({RESEND_RATE_HZ}Hz resend, STM32'den {stm32_count} gercek ornek geldi)")
+
+            # drain anything PX4 sends back (HIL_ACTUATOR_CONTROLS etc.)
             while True:
                 reply = px4.recv_match(blocking=False)
                 if reply is None:
                     break
 
+            elapsed = time.time() - loop_start
+            time.sleep(max(0.0, period - elapsed))
+
+    sender = threading.Thread(target=resend_loop, daemon=True)
+    sender.start()
+
+    try:
+        while True:
+            msg = stm32.recv_match(blocking=True, timeout=2)
+            if msg is None:
+                print("[!] STM32'den 2sn icinde veri gelmedi")
+                continue
+
+            mtype = msg.get_type()
+            if mtype == "BAD_DATA":
+                continue
+
+            if mtype == "HIL_SENSOR":
+                with lock:
+                    latest["msg"] = msg
+                    latest["stm32_count"] += 1
+
     except KeyboardInterrupt:
-        print(f"\n[*] Durduruldu. Toplam {hil_sensor_count} HIL_SENSOR PX4'e iletildi.")
+        stop.set()
+        with lock:
+            stm32_count = latest["stm32_count"]
+        print(f"\n[*] Durduruldu. STM32'den {stm32_count} ornek geldi.")
         sys.exit(0)
 
 
