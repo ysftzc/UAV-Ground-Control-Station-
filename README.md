@@ -120,7 +120,7 @@ completely different register map — the driver targets the real chip, not the 
 | CAN Bus transmission | ✅ Complete (loopback mode) | SN65HVD230 transceiver |
 | MAVLink encoding | ✅ Verified on hardware | Official mavlink/c_library_v2, HEARTBEAT + HIL_SENSOR |
 | PX4 SITL first flight | ✅ Complete | Gazebo (`gz_x500`), arm → takeoff → land verified via commander log |
-| PX4 SITL HIL bridge | 🔄 In progress | `tools/hil_bridge.py` forwards real STM32 sensors into PX4's HITL link; boots and processes real data, EKF2/baro tuning ongoing |
+| PX4 SITL HIL bridge | ✅ Complete | `tools/hil_bridge.py` forwards real STM32 sensors into PX4's HITL link at 50Hz (dithered resend); EKF2 runs clean, live `ATTITUDE` streamed from real hardware |
 | ROS2 software layer | 📋 Planned | px4_ros2 + Nav2 |
 | Python GCS dashboard | 📋 Planned | rich + WebSocket |
 
@@ -157,7 +157,7 @@ pip install pymavlink python-can rich websockets numpy
 - [x] CAN Bus frame encoding and transmission
 - [x] MAVLink bridge (STM32 → PC) — HEARTBEAT + HIL_SENSOR verified on hardware
 - [x] PX4 SITL setup and first simulated flight (Gazebo `gz_x500`, arm → takeoff → land)
-- [ ] Hardware-in-the-loop: real IMU → PX4 SITL — bridge tool built and connecting; EKF2/baro tuning in progress
+- [x] Hardware-in-the-loop: real IMU → PX4 SITL — EKF2 runs clean on real sensor data, live attitude estimate verified
 - [ ] ROS2 integration (px4_ros2, Nav2, Kalman node)
 - [ ] Python GCS dashboard (HUD + map + alerts)
 - [ ] Demo video: physical STM32 movement → Gazebo drone response
