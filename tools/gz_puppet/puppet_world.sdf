@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Minimal visualization-only world: a static x500 model whose pose is
+     teleported (not physically simulated) by attitude_to_gazebo.py based on
+     PX4's live ATTITUDE estimate, which is itself computed from real STM32
+     sensor data via tools/hil_bridge.py. No PX4 gz plugins are loaded here -
+     this world only exists to render the pose, PX4 SITL runs headless in
+     none_iris (HITL) mode separately. -->
+<sdf version="1.9">
+  <world name="stm32_puppet_world">
+    <physics type="ode">
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1.0</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+    </physics>
+    <gravity>0 0 -9.8</gravity>
+    <scene>
+      <grid>false</grid>
+      <ambient>0.4 0.4 0.4 1</ambient>
+      <background>0.7 0.7 0.7 1</background>
+      <shadows>true</shadows>
+    </scene>
+    <model name="ground_plane">
+      <static>true</static>
+      <link name="link">
+        <collision name="collision">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>1 1</size>
+            </plane>
+          </geometry>
+        </collision>
+        <visual name="visual">
+          <geometry>
+            <plane>
+              <normal>0 0 1</normal>
+              <size>50 50</size>
+            </plane>
+          </geometry>
+          <material>
+            <ambient>0.8 0.8 0.8 1</ambient>
+            <diffuse>0.8 0.8 0.8 1</diffuse>
+            <specular>0.8 0.8 0.8 1</specular>
+          </material>
+        </visual>
+      </link>
+    </model>
+    <light name="sunUTC" type="directional">
+      <pose>0 0 500 0 0 0</pose>
+      <cast_shadows>true</cast_shadows>
+      <intensity>1</intensity>
+      <direction>0.001 0.625 -0.78</direction>
+      <diffuse>0.904 0.904 0.904 1</diffuse>
+      <specular>0.271 0.271 0.271 1</specular>
+    </light>
+
+    <!-- static=true so physics/gravity never fights our pose teleports;
+         this model is a puppet, not a physically simulated vehicle -->
+    <include>
+      <uri>model://x500_base</uri>
+      <name>stm32_puppet</name>
+      <pose>0 0 1.5 0 0 0</pose>
+      <static>true</static>
+    </include>
+  </world>
+</sdf>
