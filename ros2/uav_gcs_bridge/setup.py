@@ -20,6 +20,7 @@ setup(
     entry_points={
         'console_scripts': [
             'attitude_listener = uav_gcs_bridge.attitude_listener:main',
+            'kalman_fusion = uav_gcs_bridge.kalman_fusion:main',
         ],
     },
 )

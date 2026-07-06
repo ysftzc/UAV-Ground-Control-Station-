@@ -123,7 +123,8 @@ completely different register map — the driver targets the real chip, not the 
 | PX4 SITL HIL bridge | ✅ Complete | `tools/hil_bridge.py` forwards real STM32 sensors into PX4's HITL link at 50Hz (dithered resend); EKF2 runs clean, live `ATTITUDE` streamed from real hardware |
 | Gazebo visualization | ✅ Complete | `tools/attitude_to_gazebo.py` teleports a model's pose from PX4's live attitude estimate; physically tilting the board visibly moves it in Gazebo |
 | ROS2 uXRCE-DDS bridge | ✅ Complete | Micro-XRCE-DDS-Agent + `px4_msgs`/`px4_ros_com`; `ros2/uav_gcs_bridge` node subscribes to `/fmu/out/vehicle_attitude` + `/fmu/out/sensor_combined`, streaming real STM32 hardware data end-to-end into ROS2 |
-| ROS2 Kalman fusion / Nav2 | 📋 Planned | Sensor fusion node + waypoint planning |
+| ROS2 Kalman fusion + anomaly alarm | ✅ Complete | `kalman_fusion` node runs an independent 2-state (angle, gyro-bias) Kalman filter on raw gyro/accel and cross-checks it against PX4's EKF2 estimate, flagging sustained disagreement as an anomaly |
+| Nav2 waypoint planning | 📋 Planned | Out of scope without real position/actuation feedback |
 | Python GCS dashboard | 📋 Planned | rich + WebSocket |
 
 ---
@@ -169,7 +170,8 @@ pip install pymavlink python-can rich websockets numpy
 - [x] Hardware-in-the-loop: real IMU → PX4 SITL — EKF2 runs clean on real sensor data, live attitude estimate verified
 - [x] Gazebo visualization: PX4 attitude → live model pose — physical tilt verified moving the model in real time
 - [x] ROS2 uXRCE-DDS bridge: Micro-XRCE-DDS-Agent + `px4_msgs`/`px4_ros_com`, custom `attitude_listener` node verified against real hardware data
-- [ ] ROS2 Kalman fusion node + Nav2 waypoint planning
+- [x] ROS2 Kalman fusion node: independent gyro/accel Kalman filter cross-checked against PX4's EKF2, anomaly alarm on sustained disagreement
+- [ ] Nav2 waypoint planning (needs real position/actuation feedback, currently out of scope)
 - [ ] Python GCS dashboard (HUD + map + alerts)
 - [ ] Demo video: physical STM32 movement → Gazebo drone response (recording)
 - [ ] GitHub Actions CI pipeline
