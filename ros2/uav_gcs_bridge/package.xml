@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>uav_gcs_bridge</name>
+  <version>0.1.0</version>
+  <description>ROS2 nodes consuming PX4's uXRCE-DDS topics, fed by real STM32 sensor data via the HITL bridge</description>
+  <maintainer email="ysftzc8@gmail.com">Yusuf Tuzcu</maintainer>
+  <license>MIT</license>
+
+  <depend>rclpy</depend>
+  <depend>px4_msgs</depend>
+
+  <export>
+    <build_type>ament_python</build_type>
+  </export>
+</package>

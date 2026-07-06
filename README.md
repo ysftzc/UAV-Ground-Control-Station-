@@ -122,7 +122,8 @@ completely different register map — the driver targets the real chip, not the 
 | PX4 SITL first flight | ✅ Complete | Gazebo (`gz_x500`), arm → takeoff → land verified via commander log |
 | PX4 SITL HIL bridge | ✅ Complete | `tools/hil_bridge.py` forwards real STM32 sensors into PX4's HITL link at 50Hz (dithered resend); EKF2 runs clean, live `ATTITUDE` streamed from real hardware |
 | Gazebo visualization | ✅ Complete | `tools/attitude_to_gazebo.py` teleports a model's pose from PX4's live attitude estimate; physically tilting the board visibly moves it in Gazebo |
-| ROS2 software layer | 📋 Planned | px4_ros2 + Nav2 |
+| ROS2 uXRCE-DDS bridge | ✅ Complete | Micro-XRCE-DDS-Agent + `px4_msgs`/`px4_ros_com`; `ros2/uav_gcs_bridge` node subscribes to `/fmu/out/vehicle_attitude` + `/fmu/out/sensor_combined`, streaming real STM32 hardware data end-to-end into ROS2 |
+| ROS2 Kalman fusion / Nav2 | 📋 Planned | Sensor fusion node + waypoint planning |
 | Python GCS dashboard | 📋 Planned | rich + WebSocket |
 
 ---
@@ -136,6 +137,13 @@ sudo apt install ros-jazzy-desktop
 # PX4 SITL
 git clone https://github.com/PX4/PX4-Autopilot.git
 cd PX4-Autopilot && make px4_sitl gz_x500
+
+# ROS2 bridge (uXRCE-DDS)
+git clone https://github.com/eProsima/Micro-XRCE-DDS-Agent.git
+git clone --branch release/1.16 https://github.com/PX4/px4_msgs.git ros2_ws/src/px4_msgs
+git clone https://github.com/PX4/px4_ros_com.git ros2_ws/src/px4_ros_com
+ln -s $(pwd)/ros2/uav_gcs_bridge ros2_ws/src/uav_gcs_bridge   # this repo's own node
+cd ros2_ws && colcon build --symlink-install
 
 # Python
 pip install pymavlink python-can rich websockets numpy
@@ -160,7 +168,8 @@ pip install pymavlink python-can rich websockets numpy
 - [x] PX4 SITL setup and first simulated flight (Gazebo `gz_x500`, arm → takeoff → land)
 - [x] Hardware-in-the-loop: real IMU → PX4 SITL — EKF2 runs clean on real sensor data, live attitude estimate verified
 - [x] Gazebo visualization: PX4 attitude → live model pose — physical tilt verified moving the model in real time
-- [ ] ROS2 integration (px4_ros2, Nav2, Kalman node)
+- [x] ROS2 uXRCE-DDS bridge: Micro-XRCE-DDS-Agent + `px4_msgs`/`px4_ros_com`, custom `attitude_listener` node verified against real hardware data
+- [ ] ROS2 Kalman fusion node + Nav2 waypoint planning
 - [ ] Python GCS dashboard (HUD + map + alerts)
 - [ ] Demo video: physical STM32 movement → Gazebo drone response (recording)
 - [ ] GitHub Actions CI pipeline
