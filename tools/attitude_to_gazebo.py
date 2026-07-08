@@ -36,7 +36,7 @@ import gz.transport13 as transport
 from gz.msgs10.pose_pb2 import Pose
 from gz.msgs10.boolean_pb2 import Boolean
 
-PUPPET_HEIGHT_M = 1.5
+PUPPET_HEIGHT_M = 15.0
 
 
 def euler_to_quat(roll, pitch, yaw):

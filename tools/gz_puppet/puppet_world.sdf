@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Minimal visualization-only world: a static x500 model whose pose is
-     teleported (not physically simulated) by attitude_to_gazebo.py based on
-     PX4's live ATTITUDE estimate, which is itself computed from real STM32
-     sensor data via tools/hil_bridge.py. No PX4 gz plugins are loaded here -
-     this world only exists to render the pose, PX4 SITL runs headless in
-     none_iris (HITL) mode separately. -->
+<!-- Minimal visualization-only world: a static x500_gimbal model (x500 frame +
+     PX4's stock CGO3-style 3-axis stabilized gimbal camera, mounted under the
+     nose - the same placement real ISR platforms like the TB2/Aksungur use)
+     whose pose is teleported (not physically simulated) by attitude_to_gazebo.py
+     based on PX4's live ATTITUDE estimate, which is itself computed from real
+     STM32 sensor data via tools/hil_bridge.py. No PX4 gz plugins are loaded
+     here - this world only exists to render the pose, PX4 SITL runs headless
+     in none_iris (HITL) mode separately. -->
 <sdf version="1.9">
   <world name="stm32_puppet_world">
     <physics type="ode">
@@ -13,38 +15,31 @@
       <real_time_update_rate>250</real_time_update_rate>
     </physics>
     <gravity>0 0 -9.8</gravity>
+    <!-- Declaring any <plugin> here replaces gz-sim's implicit default server
+         plugin set entirely (same rule as the <gui> block below), so
+         Physics/UserCommands/SceneBroadcaster must be re-declared explicitly
+         alongside Sensors (needed to render/publish the gimbal camera's image
+         topic) - without SceneBroadcaster the GUI never receives scene/info
+         or pose/info, so the 3D view and Entity Tree stay empty even though
+         the camera image still renders. -->
+    <plugin filename="gz-sim-physics-system" name="gz::sim::systems::Physics"/>
+    <plugin filename="gz-sim-user-commands-system" name="gz::sim::systems::UserCommands"/>
+    <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+    <plugin filename="gz-sim-sensors-system" name="gz::sim::systems::Sensors">
+      <render_engine>ogre2</render_engine>
+    </plugin>
     <scene>
       <grid>false</grid>
       <ambient>0.4 0.4 0.4 1</ambient>
       <background>0.7 0.7 0.7 1</background>
       <shadows>true</shadows>
     </scene>
-    <model name="ground_plane">
-      <static>true</static>
-      <link name="link">
-        <collision name="collision">
-          <geometry>
-            <plane>
-              <normal>0 0 1</normal>
-              <size>1 1</size>
-            </plane>
-          </geometry>
-        </collision>
-        <visual name="visual">
-          <geometry>
-            <plane>
-              <normal>0 0 1</normal>
-              <size>50 50</size>
-            </plane>
-          </geometry>
-          <material>
-            <ambient>0.8 0.8 0.8 1</ambient>
-            <diffuse>0.8 0.8 0.8 1</diffuse>
-            <specular>0.8 0.8 0.8 1</specular>
-          </material>
-        </visual>
-      </link>
-    </model>
+    <!-- real, textured (sand/grass/rock) heightmap terrain, ~1200x1200m,
+         local elevation near world origin is roughly -1 to +8m -->
+    <include>
+      <uri>model://harmonic_heightmap</uri>
+      <name>terrain</name>
+    </include>
     <light name="sunUTC" type="directional">
       <pose>0 0 500 0 0 0</pose>
       <cast_shadows>true</cast_shadows>
@@ -57,10 +52,158 @@
     <!-- static=true so physics/gravity never fights our pose teleports;
          this model is a puppet, not a physically simulated vehicle -->
     <include>
-      <uri>model://x500_base</uri>
+      <uri>model://x500_gimbal</uri>
       <name>stm32_puppet</name>
-      <pose>0 0 1.5 0 0 0</pose>
+      <pose>0 0 15 0 0 0</pose>
       <static>true</static>
     </include>
+
+    <!-- Declaring any <gui> block replaces gz-sim's default GUI plugin set
+         entirely, so the standard set (3D view, entity tree, world control,
+         etc.) is replicated here in full, with an added ImageDisplay panel
+         showing the gimbal camera feed. -->
+    <gui fullscreen="0">
+      <plugin filename="MinimalScene" name="3D View">
+        <gz-gui>
+          <title>3D View</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="string" key="state">docked</property>
+        </gz-gui>
+        <engine>ogre2</engine>
+        <scene>scene</scene>
+        <ambient_light>0.4 0.4 0.4</ambient_light>
+        <background_color>0.7 0.7 0.7</background_color>
+        <camera_pose>-15 0 20 0 0.5 0</camera_pose>
+      </plugin>
+      <plugin filename="EntityContextMenuPlugin" name="Entity context menu">
+        <gz-gui>
+          <property key="state" type="string">floating</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="GzSceneManager" name="Scene Manager">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="InteractiveViewControl" name="Interactive view control">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="CameraTracking" name="Camera Tracking">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="MarkerManager" name="Marker manager">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="SelectEntities" name="Select Entities">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="Spawn" name="Spawn Entities">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="VisualizationCapabilities" name="Visualization Capabilities">
+        <gz-gui>
+          <property key="resizable" type="bool">false</property>
+          <property key="width" type="double">5</property>
+          <property key="height" type="double">5</property>
+          <property key="state" type="string">floating</property>
+          <property key="showTitleBar" type="bool">false</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="WorldControl" name="World control">
+        <gz-gui>
+          <title>World control</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="bool" key="resizable">false</property>
+          <property type="double" key="height">72</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="left" target="left"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <play_pause>true</play_pause>
+        <step>true</step>
+        <start_paused>false</start_paused>
+        <use_event>true</use_event>
+      </plugin>
+      <plugin filename="WorldStats" name="World stats">
+        <gz-gui>
+          <title>World stats</title>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="bool" key="resizable">false</property>
+          <property type="double" key="height">110</property>
+          <property type="double" key="width">290</property>
+          <property type="double" key="z">1</property>
+          <property type="string" key="state">floating</property>
+          <anchors target="3D View">
+            <line own="right" target="right"/>
+            <line own="bottom" target="bottom"/>
+          </anchors>
+        </gz-gui>
+        <sim_time>true</sim_time>
+        <real_time>true</real_time>
+        <real_time_factor>true</real_time_factor>
+        <iterations>true</iterations>
+      </plugin>
+      <plugin filename="ComponentInspector" name="Component inspector">
+        <gz-gui>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="string" key="state">docked</property>
+        </gz-gui>
+      </plugin>
+      <plugin filename="EntityTree" name="Entity tree">
+        <gz-gui>
+          <property type="bool" key="showTitleBar">false</property>
+          <property type="string" key="state">docked</property>
+        </gz-gui>
+      </plugin>
+      <!-- Gimbal camera feed -->
+      <plugin filename="ImageDisplay" name="Image Display">
+        <gz-gui>
+          <title>Gimbal Camera</title>
+          <property key="state" type="string">docked</property>
+        </gz-gui>
+        <topic>/world/stm32_puppet_world/model/stm32_puppet/link/camera_link/sensor/camera/image</topic>
+        <topic_picker>false</topic_picker>
+      </plugin>
+    </gui>
   </world>
 </sdf>
