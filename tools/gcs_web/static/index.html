@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UAV-GCS-01</title>
+<link rel="stylesheet" href="/static/vendor/maplibre-gl.css">
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<div id="app">
+
+  <header id="topbar">
+    <div class="sys-name">UAV-GCS-01</div>
+    <div class="topbar-sep"></div>
+    <div class="field">MOD <span id="mode-val">--</span></div>
+    <div class="field">SÜRE <span id="uptime-val">00:00:00</span></div>
+    <div class="topbar-sep"></div>
+    <div class="field link-field">
+      <span class="link-dot" id="link-dot"></span>
+      <span id="link-val">BAĞLANIYOR</span>
+    </div>
+  </header>
+
+  <main id="grid">
+
+    <aside id="left-panel">
+      <section class="panel">
+        <h2>ATTITUDE <span class="badge real">GERÇEK</span></h2>
+        <canvas id="hud-canvas" width="240" height="240"></canvas>
+        <div class="readout">
+          <div class="row"><span class="lbl">ROLL</span><span class="val" id="roll-val">0.00°</span></div>
+          <div class="row"><span class="lbl">PITCH</span><span class="val" id="pitch-val">0.00°</span></div>
+          <div class="row"><span class="lbl">YAW</span><span class="val" id="yaw-val">0.00°</span></div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>KALMAN ÇAPRAZ KONTROL <span class="badge real">GERÇEK</span></h2>
+        <div class="readout small">
+          <div class="row"><span class="lbl">KF ROLL</span><span class="val" id="kf-roll-val">0.00°</span></div>
+          <div class="row"><span class="lbl">KF PITCH</span><span class="val" id="kf-pitch-val">0.00°</span></div>
+          <div class="row"><span class="lbl">Δ ROLL</span><span class="val" id="d-roll-val">0.00°</span></div>
+          <div class="row"><span class="lbl">Δ PITCH</span><span class="val" id="d-pitch-val">0.00°</span></div>
+        </div>
+        <div id="anomaly-banner" class="hidden">⚠ ANOMALİ — KF/EKF2 SAPMASI EŞİK ÜSTÜ</div>
+      </section>
+    </aside>
+
+    <section id="map-panel">
+      <div id="map"></div>
+      <div id="map-overlay-badges">
+        <span class="badge real">KONUM: SABİT (gerçek HIL_GPS fix)</span>
+        <span class="badge demo">WAYPOINT: DEMO</span>
+        <span class="badge demo">NFZ: DEMO</span>
+      </div>
+      <div id="mgrs-readout">MGRS --</div>
+    </section>
+
+    <aside id="right-panel">
+      <section class="panel" id="freertos-panel">
+        <h2>FREERTOS TASK MONİTÖR <span class="badge offline" id="freertos-badge">OFFLINE</span></h2>
+        <p class="offline-msg">Firmware'den PC'ye task-health teli yok (DBG_PRINT yalnızca debug UART metni).
+        Bkz. CLAUDE.md — planlanan iyileştirme.</p>
+      </section>
+
+      <section class="panel" id="battery-panel">
+        <h2>BATARYA <span class="badge sim">SIM</span></h2>
+        <div class="readout">
+          <div class="row"><span class="lbl">VOLTAJ</span><span class="val" id="batt-volt-val">-- V</span></div>
+          <div class="row"><span class="lbl">DOLULUK</span><span class="val" id="batt-pct-val">-- %</span></div>
+        </div>
+      </section>
+
+      <section class="panel" id="alarm-panel">
+        <h2>ALARM GEÇMİŞİ</h2>
+        <ul id="alarm-log"></ul>
+      </section>
+    </aside>
+
+  </main>
+
+  <footer id="bottom-panel">
+    <section class="panel" id="sparkline-panel">
+      <h2>SENSÖR — İVME / GYRO <span class="badge real">GERÇEK</span></h2>
+      <canvas id="spark-canvas" width="900" height="90"></canvas>
+    </section>
+    <section class="panel" id="can-panel">
+      <h2>CAN BUS <span class="badge derived">YENİDEN KODLANMIŞ</span></h2>
+      <table id="can-table">
+        <thead><tr><th>ID</th><th>ETİKET</th><th>BYTES</th></tr></thead>
+        <tbody id="can-tbody"></tbody>
+      </table>
+    </section>
+  </footer>
+
+</div>
+
+<script src="/static/vendor/maplibre-gl.js"></script>
+<script src="/static/vendor/mgrs.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>
