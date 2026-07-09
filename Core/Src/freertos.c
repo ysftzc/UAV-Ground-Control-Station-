@@ -483,7 +483,7 @@ void WDG_Task(void *argument) {
         HAL_GPIO_TogglePin(GPIOC, GPIO_PIN_13);
 
         /* Heap monitor + UART */
-        uint32_t heap_free __attribute__((unused)) = xPortGetFreeHeapSize();
+        uint32_t heap_free = xPortGetFreeHeapSize();
         DBG_PRINT("[WDG] tick:%lu heap:%lu free\r\n", tick, heap_free);
         tick++;
 
@@ -497,6 +497,21 @@ void WDG_Task(void *argument) {
                   (unsigned)uxTaskGetStackHighWaterMark(xCanTaskHandle),
                   (unsigned)uxTaskGetStackHighWaterMark(xMavlinkTaskHandle),
                   (unsigned)uxTaskGetStackHighWaterMark(xWdgTaskHandle));
+
+        /* Ayni hwm verisini PC'ye gercek bir tel uzerinden tasi (NAMED_VALUE_INT,
+         * MAVLINK_TASK'in kullandigi UART1 hattinda) - DBG_PRINT'in aksine bu
+         * Release build'de de calisir, cunku artik debug metni degil gercek
+         * telemetri. Bkz. tools/gcs_web (dashboard'daki FreeRTOS paneli). */
+        MAVLink_TaskHealth_t health = {
+            .imu_hwm  = (uint32_t)uxTaskGetStackHighWaterMark(xImuTaskHandle),
+            .baro_hwm = (uint32_t)uxTaskGetStackHighWaterMark(xBaroTaskHandle),
+            .mag_hwm  = (uint32_t)uxTaskGetStackHighWaterMark(xMagTaskHandle),
+            .can_hwm  = (uint32_t)uxTaskGetStackHighWaterMark(xCanTaskHandle),
+            .mav_hwm  = (uint32_t)uxTaskGetStackHighWaterMark(xMavlinkTaskHandle),
+            .wdg_hwm  = (uint32_t)uxTaskGetStackHighWaterMark(xWdgTaskHandle),
+            .heap_free = heap_free,
+        };
+        MAVLink_SendTaskHealth(&huart1, xUARTMutex, &health, HAL_GetTick());
 
         vTaskDelay(pdMS_TO_TICKS(1000));
     }

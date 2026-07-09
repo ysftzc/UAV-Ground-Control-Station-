@@ -34,6 +34,7 @@ import uvicorn
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from pymavlink import mavutil
 from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
                         QoSReliabilityPolicy)
@@ -52,6 +53,19 @@ HOME_ALT_M = 800.0
 LINK_TIMEOUT_S = 2.0
 ANOMALY_THRESHOLD_DEG = 20.0
 BROADCAST_HZ = 15
+
+# hil_bridge.py relays the STM32's real NAMED_VALUE_INT task-health telemetry
+# (see MAVLink_SendTaskHealth, Core/Src/mavlink_bridge.c) here over local UDP.
+TASK_HEALTH_UDP_PORT = 14560
+TASK_HEALTH_TIMEOUT_S = 3.0  # WDG_Task sends once/second - 3 missed sends = stale
+TASK_HEALTH_NAMES = {
+    "hwm_imu": "IMU_Task",
+    "hwm_baro": "BARO_Task",
+    "hwm_mag": "MAG_Task",
+    "hwm_can": "CAN_Task",
+    "hwm_mav": "MAVLINK_Task",
+    "hwm_wdg": "WDG_Task",
+}
 
 
 def quat_to_euler_deg(q):
@@ -142,6 +156,18 @@ class TelemetryState:
         self.kf_roll_deg = 0.0
         self.kf_pitch_deg = 0.0
         self._last_sensor_ts_us = None
+        self.task_hwm = {}      # NAMED_VALUE_INT name -> (value, last_seen monotonic time)
+        self.heap_free = None
+        self.heap_free_t = 0.0
+
+    def on_task_health(self, name: str, value: int):
+        with self.lock:
+            now = time.time()
+            if name == "heap":
+                self.heap_free = value
+                self.heap_free_t = now
+            else:
+                self.task_hwm[name] = (value, now)
 
     def on_attitude(self, msg: VehicleAttitude):
         with self.lock:
@@ -237,11 +263,37 @@ class TelemetryState:
                     ],
                     "note": "loopback-only on STM32, re-encoded here from live accel; baro/mag are firmware TODO stubs",
                 },
-                "freertos": {
-                    "available": False,
-                    "reason": "no wire path from WDG_Task to PC (DBG_PRINT is debug-UART-only)",
-                },
+                "freertos": self._freertos_snapshot(now),
             }
+
+    def _freertos_snapshot(self, now):
+        # Called with self.lock already held (from snapshot()).
+        tasks = []
+        freshest = 0.0
+        for key, label in TASK_HEALTH_NAMES.items():
+            entry = self.task_hwm.get(key)
+            if entry is None:
+                continue
+            value, seen_t = entry
+            freshest = max(freshest, seen_t)
+            tasks.append({"name": label, "hwm": value, "fresh": (now - seen_t) < TASK_HEALTH_TIMEOUT_S})
+
+        heap_fresh = self.heap_free is not None and (now - self.heap_free_t) < TASK_HEALTH_TIMEOUT_S
+        available = bool(tasks) and (now - freshest) < TASK_HEALTH_TIMEOUT_S
+
+        if not available:
+            return {
+                "available": False,
+                "reason": "no wire path from WDG_Task to PC (DBG_PRINT is debug-UART-only)"
+                          if not tasks else "STM32'den task-health verisi kesildi (son görülen > "
+                                            f"{TASK_HEALTH_TIMEOUT_S:.0f}s önce)",
+            }
+        return {
+            "available": True,
+            "real": True,
+            "tasks": tasks,
+            "heap_free": self.heap_free if heap_fresh else None,
+        }
 
 
 class GcsWebNode(Node):
@@ -261,6 +313,19 @@ class GcsWebNode(Node):
 
 def run_ros_spin(node):
     rclpy.spin(node)
+
+
+def run_task_health_listener(state: TelemetryState, port: int):
+    """Reads the NAMED_VALUE_INT task-health stream hil_bridge.py relays over
+    local UDP (see its --task-health-port). Independent of the ROS2/DDS path -
+    this is raw MAVLink straight from the STM32, just forwarded once."""
+    conn = mavutil.mavlink_connection(f"udpin:127.0.0.1:{port}")
+    while True:
+        msg = conn.recv_match(type="NAMED_VALUE_INT", blocking=True)
+        if msg is None:
+            continue
+        name = msg.name.rstrip("\x00") if isinstance(msg.name, str) else msg.name
+        state.on_task_health(name, msg.value)
 
 
 app = FastAPI()
@@ -294,6 +359,10 @@ def main():
     node = GcsWebNode(state)
     spin_thread = threading.Thread(target=run_ros_spin, args=(node,), daemon=True)
     spin_thread.start()
+
+    health_thread = threading.Thread(
+        target=run_task_health_listener, args=(state, TASK_HEALTH_UDP_PORT), daemon=True)
+    health_thread.start()
 
     print(f"[*] GCS dashboard: http://{args.host}:{args.port}/")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")

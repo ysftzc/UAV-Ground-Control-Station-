@@ -61,3 +61,22 @@ void MAVLink_SendHilSensor(UART_HandleTypeDef *huart, SemaphoreHandle_t uart_mut
 
     MAVLink_Send(huart, uart_mutex, &msg);
 }
+
+static void MAVLink_SendNamedValueInt(UART_HandleTypeDef *huart, SemaphoreHandle_t uart_mutex,
+                                       uint32_t time_boot_ms, const char *name, int32_t value) {
+    mavlink_message_t msg;
+    mavlink_msg_named_value_int_pack(MAVLINK_BRIDGE_SYSTEM_ID, MAVLINK_BRIDGE_COMPONENT_ID, &msg,
+                                      time_boot_ms, name, value);
+    MAVLink_Send(huart, uart_mutex, &msg);
+}
+
+void MAVLink_SendTaskHealth(UART_HandleTypeDef *huart, SemaphoreHandle_t uart_mutex,
+                             const MAVLink_TaskHealth_t *health, uint32_t time_boot_ms) {
+    MAVLink_SendNamedValueInt(huart, uart_mutex, time_boot_ms, "hwm_imu",  (int32_t)health->imu_hwm);
+    MAVLink_SendNamedValueInt(huart, uart_mutex, time_boot_ms, "hwm_baro", (int32_t)health->baro_hwm);
+    MAVLink_SendNamedValueInt(huart, uart_mutex, time_boot_ms, "hwm_mag",  (int32_t)health->mag_hwm);
+    MAVLink_SendNamedValueInt(huart, uart_mutex, time_boot_ms, "hwm_can",  (int32_t)health->can_hwm);
+    MAVLink_SendNamedValueInt(huart, uart_mutex, time_boot_ms, "hwm_mav",  (int32_t)health->mav_hwm);
+    MAVLink_SendNamedValueInt(huart, uart_mutex, time_boot_ms, "hwm_wdg",  (int32_t)health->wdg_hwm);
+    MAVLink_SendNamedValueInt(huart, uart_mutex, time_boot_ms, "heap",     (int32_t)health->heap_free);
+}

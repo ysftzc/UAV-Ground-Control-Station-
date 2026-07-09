@@ -18,9 +18,17 @@ latest STM32 snapshot and *resends* it to PX4 on its own high-rate timer
 (RESEND_RATE_HZ) - same "hold" semantics, just applied on the PC side where
 it's cheap to iterate on.
 
+Also relays the STM32's real NAMED_VALUE_INT task-health telemetry (see
+MAVLink_SendTaskHealth in Core/Src/mavlink_bridge.c - hwm_imu/hwm_baro/
+hwm_mag/hwm_can/hwm_mav/hwm_wdg/heap) out over a local UDP port, since
+tools/gcs_web/server.py can't share this process's exclusive hold on the
+serial port. This is a separate channel from the PX4 TCP link - PX4 has
+no use for this data, it's for the web dashboard's FreeRTOS panel.
+
 Usage:
     .venv/bin/python tools/hil_bridge.py [--serial-port /dev/ttyUSB0] [--baud 115200]
                                           [--px4-host 127.0.0.1] [--px4-port 4560]
+                                          [--task-health-port 14560]
 """
 
 import argparse
@@ -67,6 +75,7 @@ def main():
     parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--px4-host", default="127.0.0.1")
     parser.add_argument("--px4-port", type=int, default=4560)
+    parser.add_argument("--task-health-port", type=int, default=14560)
     args = parser.parse_args()
 
     print(f"[*] STM32 seri baglantisi: {args.serial_port} @ {args.baud} baud")
@@ -79,6 +88,12 @@ def main():
     px4 = mavutil.mavlink_connection(f"tcpin:{args.px4_host}:{args.px4_port}", source_system=1,
                                       source_component=mavutil.mavlink.MAV_COMP_ID_AUTOPILOT1)
     print("[*] PX4 baglandi.")
+
+    # gcs_web/server.py bu porttan NAMED_VALUE_INT dinler - fire-and-forget UDP,
+    # server calismiyorsa bile burada hata vermez (udpout connect() gerektirmez).
+    task_health_out = mavutil.mavlink_connection(
+        f"udpout:127.0.0.1:{args.task_health_port}", source_system=1,
+        source_component=mavutil.mavlink.MAV_COMP_ID_PERIPHERAL)
 
     lock = threading.Lock()
     latest = {"msg": None, "stm32_count": 0}
@@ -162,6 +177,9 @@ def main():
                 with lock:
                     latest["msg"] = msg
                     latest["stm32_count"] += 1
+            elif mtype == "NAMED_VALUE_INT":
+                name = msg.name.encode("ascii") if isinstance(msg.name, str) else msg.name
+                task_health_out.mav.named_value_int_send(msg.time_boot_ms, name, msg.value)
 
     except KeyboardInterrupt:
         stop.set()

@@ -282,24 +282,42 @@
       <div data-screen-label="FreeRTOS Monitör" style="flex:none;background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);overflow:hidden">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #1c2733">
           <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6b7c86">FREERTOS TASK MONİTÖR</span>
-          <span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:#ff5252;border:1px solid rgba(255,82,82,0.45);background:rgba(255,82,82,0.09);border-radius:3px;padding:2px 7px"><span style="animation:gcsBlink 1.4s infinite">●</span> OFFLINE</span>
+          <sc-if value="{{ rtosAvailable }}" hint-placeholder-val="{{ false }}">
+            <span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:#00e676;border:1px solid rgba(0,230,118,0.4);background:rgba(0,230,118,0.09);border-radius:3px;padding:2px 7px">● GERÇEK</span>
+          </sc-if>
+          <sc-if value="{{ rtosOffline }}" hint-placeholder-val="{{ true }}">
+            <span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:#ff5252;border:1px solid rgba(255,82,82,0.45);background:rgba(255,82,82,0.09);border-radius:3px;padding:2px 7px"><span style="animation:gcsBlink 1.4s infinite">●</span> OFFLINE</span>
+          </sc-if>
         </div>
         <div style="padding:8px 12px 10px">
-          <div style="display:grid;grid-template-columns:1.4fr 0.8fr 1fr;border:1px solid #1c2733;border-radius:4px;overflow:hidden;opacity:0.45">
-            <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:4px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">TASK</div>
-            <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:4px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">DURUM</div>
-            <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:4px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">STACK WM</div>
-            <div style="font-size:10px;color:#3a4a56;padding:5px 8px">IMU_Task</div>
-            <div style="font-size:10px;color:#3a4a56;padding:5px 8px">—</div>
-            <div style="font-size:10px;color:#3a4a56;padding:5px 8px">—</div>
-            <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">CAN_Task</div>
-            <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">—</div>
-            <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">—</div>
-            <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">WDG_Task</div>
-            <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">—</div>
-            <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">—</div>
-          </div>
-          <div style="font-size:9px;line-height:1.5;color:#6b7c86;margin-top:7px;border-left:2px solid rgba(255,82,82,0.4);padding-left:8px">{{ rtosReason }}</div>
+          <sc-if value="{{ rtosAvailable }}" hint-placeholder-val="{{ false }}">
+            <div style="display:grid;grid-template-columns:1.4fr 1fr;border:1px solid #1c2733;border-radius:4px;overflow:hidden">
+              <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:4px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">TASK</div>
+              <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:4px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">STACK WM (word)</div>
+              <sc-for list="{{ rtosTasks }}" as="tsk" hint-placeholder-count="6">
+                <div style="font-size:10px;color: {{ tsk.color }};padding:5px 8px;border-top:1px solid #141b23">{{ tsk.name }}</div>
+                <div style="font-size:10px;color: {{ tsk.color }};padding:5px 8px;border-top:1px solid #141b23;font-variant-numeric:tabular-nums">{{ tsk.hwmStr }}</div>
+              </sc-for>
+            </div>
+            <div style="font-size:9px;line-height:1.5;color:#6b7c86;margin-top:7px">HEAP FREE: <span style="color:#00e676;font-weight:700">{{ rtosHeapStr }}</span> byte — gerçek `uxTaskGetStackHighWaterMark()`, STM32'den NAMED_VALUE_INT ile</div>
+          </sc-if>
+          <sc-if value="{{ rtosOffline }}" hint-placeholder-val="{{ true }}">
+            <div style="display:grid;grid-template-columns:1.4fr 0.8fr 1fr;border:1px solid #1c2733;border-radius:4px;overflow:hidden;opacity:0.45">
+              <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:4px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">TASK</div>
+              <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:4px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">DURUM</div>
+              <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:4px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">STACK WM</div>
+              <div style="font-size:10px;color:#3a4a56;padding:5px 8px">IMU_Task</div>
+              <div style="font-size:10px;color:#3a4a56;padding:5px 8px">—</div>
+              <div style="font-size:10px;color:#3a4a56;padding:5px 8px">—</div>
+              <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">CAN_Task</div>
+              <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">—</div>
+              <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">—</div>
+              <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">WDG_Task</div>
+              <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">—</div>
+              <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">—</div>
+            </div>
+            <div style="font-size:9px;line-height:1.5;color:#6b7c86;margin-top:7px;border-left:2px solid rgba(255,82,82,0.4);padding-left:8px">{{ rtosReason }}</div>
+          </sc-if>
         </div>
       </div>
 
@@ -919,6 +937,14 @@ class Component extends DCLogic {
       cmdDisarm: () => this.demoCmd("DISARM"),
       cmdHold: () => this.demoCmd("HOLD"),
       cmdRtl: () => this.demoCmd("RTL"),
+      rtosAvailable: !!T.freertos.available,
+      rtosOffline: !T.freertos.available,
+      rtosTasks: (T.freertos.tasks || []).map((t) => ({
+        name: t.name,
+        hwmStr: String(t.hwm),
+        color: t.fresh === false ? "#6b7c86" : "#d7e6df",
+      })),
+      rtosHeapStr: T.freertos.heap_free != null ? String(T.freertos.heap_free) : "—",
       rtosReason: "Veri yok: " + (T.freertos.reason || "firmware → PC telemetri hattı mevcut değil") + ". Sahte task verisi ÜRETİLMİYOR.",
       alarmCount: this.state.alarms.length,
       alarms: this.state.alarms.map((a) => Object.assign({

@@ -25,9 +25,24 @@ typedef struct {
     float altitude;                    /* m */
 } MAVLink_SensorSnapshot_t;
 
+/* WDG_Task'in uxTaskGetStackHighWaterMark() ile hesapladigi gercek stack
+ * marjlari (WORD cinsinden) + heap. Onceden sadece Debug UART metnine
+ * (DBG_PRINT, Release'de no-op) giden bu veriyi PC'ye tasimak icin. */
+typedef struct {
+    uint32_t imu_hwm, baro_hwm, mag_hwm, can_hwm, mav_hwm, wdg_hwm; /* word */
+    uint32_t heap_free;                                             /* byte */
+} MAVLink_TaskHealth_t;
+
 void MAVLink_SendHeartbeat(UART_HandleTypeDef *huart, SemaphoreHandle_t uart_mutex);
 
 void MAVLink_SendHilSensor(UART_HandleTypeDef *huart, SemaphoreHandle_t uart_mutex,
                             const MAVLink_SensorSnapshot_t *snapshot, uint64_t time_usec);
+
+/* NAMED_VALUE_INT dizisi olarak gonderir (custom mesaj tanimlamaya/mavgen
+ * calistirmaya gerek kalmadan, zaten vendored olan common dialect'ten) -
+ * her task icin bir mesaj, name alaninda task kisaltmasi (ör. "imu",
+ * "heap"), value alaninda gercek deger. */
+void MAVLink_SendTaskHealth(UART_HandleTypeDef *huart, SemaphoreHandle_t uart_mutex,
+                             const MAVLink_TaskHealth_t *health, uint32_t time_boot_ms);
 
 #endif /* MAVLINK_BRIDGE_H */
