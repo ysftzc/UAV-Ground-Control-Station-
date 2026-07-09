@@ -184,6 +184,7 @@ class TelemetryState:
 
             return {
                 "t": now,
+                "schema_ver": 1,  # bump if the wire payload shape changes - the frontend warns on mismatch
                 "uptime_s": now - self.start_time,
                 "mode": "HITL",  # this system genuinely runs PX4 SITL in HITL (none_iris) mode
                 "link": "OK" if link_ok else "LOST",

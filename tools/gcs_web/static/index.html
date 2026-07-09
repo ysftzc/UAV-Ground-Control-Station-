@@ -1,103 +1,954 @@
 <!DOCTYPE html>
-<html lang="tr">
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>UAV-GCS-01</title>
-<link rel="stylesheet" href="/static/vendor/maplibre-gl.css">
-<link rel="stylesheet" href="/static/style.css">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="/static/support.js"></script>
 </head>
 <body>
-<div id="app">
+<x-dc>
+<helmet>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700;800&display=swap">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/mgrs@2.1.0/dist/mgrs.js"></script>
+  <style>
+    html, body { margin:0; padding:0; background:#0a0c0f; }
+    a { color:#00e676; } a:hover { color:#69f0ae; }
+    *::-webkit-scrollbar { width:6px; height:6px; }
+    *::-webkit-scrollbar-thumb { background:#1c2733; border-radius:3px; }
+    *::-webkit-scrollbar-track { background:transparent; }
+    @keyframes gcsBlink { 0%,49% { opacity:1; } 50%,100% { opacity:0.25; } }
+    @keyframes gcsPulse { 0% { box-shadow:0 0 0 0 rgba(0,230,118,0.5); } 70% { box-shadow:0 0 0 7px rgba(0,230,118,0); } 100% { box-shadow:0 0 0 0 rgba(0,230,118,0); } }
+    @keyframes gcsAlarmPulse { 0%,100% { background:rgba(255,82,82,0.16); } 50% { background:rgba(255,82,82,0.32); } }
+    .leaflet-container { background:#0a0c0f !important; font-family:'JetBrains Mono',monospace !important; }
+    .leaflet-tile { filter:saturate(0.75) brightness(0.82) contrast(1.05); }
+  </style>
+</helmet>
 
-  <header id="topbar">
-    <div class="sys-name">UAV-GCS-01</div>
-    <div class="topbar-sep"></div>
-    <div class="field">MOD <span id="mode-val">--</span></div>
-    <div class="field">SÜRE <span id="uptime-val">00:00:00</span></div>
-    <div class="topbar-sep"></div>
-    <div class="field link-field">
-      <span class="link-dot" id="link-dot"></span>
-      <span id="link-val">BAĞLANIYOR</span>
+<div style="height:100vh;min-height:900px;min-width:1320px;box-sizing:border-box;display:grid;grid-template-rows:46px minmax(0,1fr) 190px;gap:8px;padding:8px;background:#0a0c0f;color:#d7e6df;font-family:'JetBrains Mono',ui-monospace,monospace;font-size:13px;overflow:hidden">
+
+  <!-- ===== TOP BAR ===== -->
+  <div data-screen-label="Üst Bar" style="display:flex;align-items:center;background:linear-gradient(180deg,#111721,#0f1319);border:1px solid #1c2733;border-radius:6px;padding:0 12px;box-shadow:0 2px 10px rgba(0,0,0,0.45)">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div style="width:8px;height:8px;background:#00e676;border-radius:1px;transform:rotate(45deg);box-shadow:0 0 8px rgba(0,230,118,0.7)"></div>
+      <div style="font-size:15px;font-weight:800;letter-spacing:3px;color:#d7e6df">UAV-GCS-01</div>
+      <span style="font-size:9px;font-weight:800;letter-spacing:1px;color: {{ schemaColor }};border:1px solid {{ schemaBorder }};border-radius:3px;padding:2px 6px">ŞEMA {{ schemaStr }}</span>
     </div>
-  </header>
-
-  <main id="grid">
-
-    <aside id="left-panel">
-      <section class="panel">
-        <h2>ATTITUDE <span class="badge real">GERÇEK</span></h2>
-        <canvas id="hud-canvas" width="240" height="240"></canvas>
-        <div class="readout">
-          <div class="row"><span class="lbl">ROLL</span><span class="val" id="roll-val">0.00°</span></div>
-          <div class="row"><span class="lbl">PITCH</span><span class="val" id="pitch-val">0.00°</span></div>
-          <div class="row"><span class="lbl">YAW</span><span class="val" id="yaw-val">0.00°</span></div>
-        </div>
-      </section>
-
-      <section class="panel">
-        <h2>KALMAN ÇAPRAZ KONTROL <span class="badge real">GERÇEK</span></h2>
-        <div class="readout small">
-          <div class="row"><span class="lbl">KF ROLL</span><span class="val" id="kf-roll-val">0.00°</span></div>
-          <div class="row"><span class="lbl">KF PITCH</span><span class="val" id="kf-pitch-val">0.00°</span></div>
-          <div class="row"><span class="lbl">Δ ROLL</span><span class="val" id="d-roll-val">0.00°</span></div>
-          <div class="row"><span class="lbl">Δ PITCH</span><span class="val" id="d-pitch-val">0.00°</span></div>
-        </div>
-        <div id="anomaly-banner" class="hidden">⚠ ANOMALİ — KF/EKF2 SAPMASI EŞİK ÜSTÜ</div>
-      </section>
-    </aside>
-
-    <section id="map-panel">
-      <div id="map"></div>
-      <div id="map-overlay-badges">
-        <span class="badge real">KONUM: SABİT (gerçek HIL_GPS fix)</span>
-        <span class="badge demo">WAYPOINT: DEMO</span>
-        <span class="badge demo">NFZ: DEMO</span>
+    <div style="flex:1"></div>
+    <div style="display:flex;align-items:center;gap:14px">
+      <div style="display:flex;align-items:baseline;gap:6px">
+        <span style="font-size:10px;letter-spacing:1.5px;color:#6b7c86">MOD</span>
+        <span style="font-size:13px;font-weight:700;letter-spacing:2px;color:#00e676">{{ mode }}</span>
       </div>
-      <div id="mgrs-readout">MGRS --</div>
-    </section>
+      <div style="display:flex;align-items:baseline;gap:6px;border-left:1px solid #1c2733;padding-left:14px">
+        <span style="font-size:10px;letter-spacing:1.5px;color:#6b7c86">UTC</span>
+        <span style="font-size:13px;font-weight:700;color:#d7e6df;font-variant-numeric:tabular-nums">{{ utcStr }}</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:6px">
+        <span style="font-size:10px;letter-spacing:1.5px;color:#6b7c86">GÖREV</span>
+        <span style="font-size:13px;font-weight:700;color:#d7e6df;font-variant-numeric:tabular-nums">{{ uptimeStr }}</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:6px;border-left:1px solid #1c2733;padding-left:14px">
+        <span style="font-size:10px;letter-spacing:1.5px;color:#6b7c86">TELEMETRİ</span>
+        <span style="font-size:12px;font-weight:700;color: {{ feedColor }};font-variant-numeric:tabular-nums">{{ feedSrc }} · {{ rateStr }} Hz</span>
+      </div>
+      <div style="display:flex;align-items:baseline;gap:6px">
+        <span style="font-size:10px;letter-spacing:1.5px;color:#6b7c86">PAKET</span>
+        <span style="font-size:12px;font-weight:700;color: {{ ageColor }};font-variant-numeric:tabular-nums">{{ ageStr }} · σ{{ jitterStr }}</span>
+      </div>
+      <button onClick="{{ toggleRec }}" style="font-family:inherit;font-size:10px;font-weight:800;letter-spacing:1.5px;color: {{ recColor }};background: {{ recBg }};border:1px solid {{ recBorder }};border-radius:4px;padding:6px 12px;cursor:pointer;margin-left:2px" style-hover="filter:brightness(1.25)">{{ recLabel }}</button>
+      <div style="display:flex;align-items:center;gap:8px;border:1px solid {{ linkBorder }};background: {{ linkBg }};border-radius:4px;padding:5px 11px">
+        <div style="width:8px;height:8px;border-radius:50%;background: {{ linkColor }};animation:gcsPulse 2s infinite"></div>
+        <span style="font-size:11px;font-weight:800;letter-spacing:2px;color: {{ linkColor }}">{{ linkText }}</span>
+      </div>
+    </div>
+  </div>
 
-    <aside id="right-panel">
-      <section class="panel" id="freertos-panel">
-        <h2>FREERTOS TASK MONİTÖR <span class="badge offline" id="freertos-badge">OFFLINE</span></h2>
-        <p class="offline-msg">Firmware'den PC'ye task-health teli yok (DBG_PRINT yalnızca debug UART metni).
-        Bkz. CLAUDE.md — planlanan iyileştirme.</p>
-      </section>
+  <!-- ===== MAIN ROW ===== -->
+  <div style="display:grid;grid-template-columns:372px minmax(0,1fr) 312px;gap:8px;min-height:0">
 
-      <section class="panel" id="battery-panel">
-        <h2>BATARYA <span class="badge sim">SIM</span></h2>
-        <div class="readout">
-          <div class="row"><span class="lbl">VOLTAJ</span><span class="val" id="batt-volt-val">-- V</span></div>
-          <div class="row"><span class="lbl">DOLULUK</span><span class="val" id="batt-pct-val">-- %</span></div>
+    <!-- ==== LEFT COLUMN ==== -->
+    <div style="display:flex;flex-direction:column;gap:8px;min-height:0">
+
+      <!-- ATTITUDE HUD + TAPES -->
+      <div data-screen-label="Attitude" style="flex:none;background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #1c2733">
+          <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6b7c86">ATTITUDE / EKF2</span>
+          <span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:#00e676;border:1px solid rgba(0,230,118,0.4);background:rgba(0,230,118,0.09);border-radius:3px;padding:2px 7px">● GERÇEK</span>
         </div>
-      </section>
+        <div style="display:flex;justify-content:center;align-items:center;gap:8px;padding:12px 10px 8px">
+          <div style="position:relative;width:44px;height:206px;background:#0a0e13;border:1px solid #1c2733;border-radius:4px;overflow:hidden">
+            <div style="position:absolute;inset:0;background:repeating-linear-gradient(-45deg,transparent 0 8px,rgba(107,124,134,0.08) 8px 16px)"></div>
+            <div style="position:absolute;top:6px;left:0;right:0;text-align:center;font-size:8px;letter-spacing:1px;color:#6b7c86">IAS</div>
+            <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%) rotate(-90deg);white-space:nowrap;font-size:9px;font-weight:800;letter-spacing:2px;color:#ff5252;opacity:0.8">OFFLINE · PİTOT YOK</div>
+          </div>
+          <div style="position:relative;width:206px;height:206px;border-radius:50%;overflow:hidden;border:2px solid #263646;box-shadow:inset 0 0 30px rgba(0,0,0,0.7), 0 0 0 5px #0c1015, 0 0 0 6px #1c2733">
+            <div style="position:absolute;left:50%;top:50%;width:560px;height:560px;margin-left:-280px;margin-top:-280px;transform:rotate({{ hudRollDeg }}deg) translateY({{ hudPitchPx }}px);background:linear-gradient(to bottom,#173248 0%,#1d4059 49.8%,#e8f4ee 49.8%,#e8f4ee 50.2%,#4a3a1c 50.2%,#332a17 100%)">
+              <div style="position:absolute;left:50%;top:calc(50% - 66px);width:64px;margin-left:-32px;border-top:1px solid rgba(232,244,238,0.75)"></div>
+              <div style="position:absolute;left:50%;top:calc(50% - 72px);margin-left:44px;font-size:9px;color:rgba(232,244,238,0.8)">30</div>
+              <div style="position:absolute;left:50%;top:calc(50% - 44px);width:44px;margin-left:-22px;border-top:1px solid rgba(232,244,238,0.6)"></div>
+              <div style="position:absolute;left:50%;top:calc(50% - 50px);margin-left:34px;font-size:9px;color:rgba(232,244,238,0.7)">20</div>
+              <div style="position:absolute;left:50%;top:calc(50% - 22px);width:30px;margin-left:-15px;border-top:1px solid rgba(232,244,238,0.5)"></div>
+              <div style="position:absolute;left:50%;top:calc(50% + 22px);width:30px;margin-left:-15px;border-top:1px dashed rgba(232,244,238,0.5)"></div>
+              <div style="position:absolute;left:50%;top:calc(50% + 44px);width:44px;margin-left:-22px;border-top:1px dashed rgba(232,244,238,0.6)"></div>
+              <div style="position:absolute;left:50%;top:calc(50% + 50px);margin-left:34px;font-size:9px;color:rgba(232,244,238,0.7)">20</div>
+              <div style="position:absolute;left:50%;top:calc(50% + 66px);width:64px;margin-left:-32px;border-top:1px dashed rgba(232,244,238,0.75)"></div>
+              <div style="position:absolute;left:50%;top:calc(50% + 72px);margin-left:44px;font-size:9px;color:rgba(232,244,238,0.8)">30</div>
+            </div>
+            <div style="position:absolute;left:50%;top:50%;width:56px;height:2px;margin-left:-86px;margin-top:-1px;background:#00e676;box-shadow:0 0 6px rgba(0,230,118,0.8)"></div>
+            <div style="position:absolute;left:50%;top:50%;width:56px;height:2px;margin-left:30px;margin-top:-1px;background:#00e676;box-shadow:0 0 6px rgba(0,230,118,0.8)"></div>
+            <div style="position:absolute;left:50%;top:50%;width:8px;height:8px;margin-left:-4px;margin-top:-4px;border:2px solid #00e676;border-radius:50%;box-sizing:border-box;box-shadow:0 0 6px rgba(0,230,118,0.8)"></div>
+            <div style="position:absolute;left:50%;top:8px;width:0;height:0;margin-left:-5px;border-left:5px solid transparent;border-right:5px solid transparent;border-top:8px solid #00e676"></div>
+            <div style="position:absolute;inset:0;border-radius:50%;box-shadow:inset 0 0 26px rgba(0,0,0,0.55);pointer-events:none"></div>
+          </div>
+          <div style="position:relative;width:52px;height:206px;background:#0a0e13;border:1px solid #1c2733;border-radius:4px;overflow:hidden">
+            <div style="position:absolute;top:6px;left:0;right:0;text-align:center;font-size:8px;letter-spacing:1px;color:#6b7c86">ALT m</div>
+            <sc-for list="{{ altTicks }}" as="tk" hint-placeholder-count="5">
+              <div style="position:absolute;left:0;right:0;top: {{ tk.top }}px">
+                <div style="width: {{ tk.w }}px;height:1px;background:rgba(0,230,118,0.4)"></div>
+                <div style="position:absolute;right:4px;top:-5px;font-size:8px;color:#6b7c86;font-variant-numeric:tabular-nums">{{ tk.label }}</div>
+              </div>
+            </sc-for>
+            <div style="position:absolute;left:0;right:0;top:50%;height:18px;margin-top:-9px;background:#0a0e13;border-top:1px solid #00e676;border-bottom:1px solid #00e676;display:flex;align-items:center;justify-content:center;box-shadow:inset 0 0 0 100px rgba(0,230,118,0.12)">
+              <span style="font-size:11px;font-weight:800;color:#00e676;font-variant-numeric:tabular-nums">{{ altStr }}</span>
+            </div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;padding:2px 12px 12px">
+          <div style="background:#0a0e13;border:1px solid #1c2733;border-radius:4px;padding:6px 8px;text-align:center">
+            <div style="font-size:9px;letter-spacing:1.5px;color:#6b7c86;margin-bottom:2px">ROLL</div>
+            <div style="font-size:15px;font-weight:700;color:#00e676;font-variant-numeric:tabular-nums">{{ rollStr }}°</div>
+          </div>
+          <div style="background:#0a0e13;border:1px solid #1c2733;border-radius:4px;padding:6px 8px;text-align:center">
+            <div style="font-size:9px;letter-spacing:1.5px;color:#6b7c86;margin-bottom:2px">PITCH</div>
+            <div style="font-size:15px;font-weight:700;color:#00e676;font-variant-numeric:tabular-nums">{{ pitchStr }}°</div>
+          </div>
+          <div style="background:#0a0e13;border:1px solid #1c2733;border-radius:4px;padding:6px 8px;text-align:center">
+            <div style="font-size:9px;letter-spacing:1.5px;color:#6b7c86;margin-bottom:2px">YAW</div>
+            <div style="font-size:15px;font-weight:700;color:#00e676;font-variant-numeric:tabular-nums">{{ yawStr }}°</div>
+          </div>
+        </div>
+      </div>
 
-      <section class="panel" id="alarm-panel">
-        <h2>ALARM GEÇMİŞİ</h2>
-        <ul id="alarm-log"></ul>
-      </section>
-    </aside>
+      <!-- KALMAN CROSS-CHECK -->
+      <div data-screen-label="Kalman Çapraz Kontrol" style="flex:1;min-height:224px;background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #1c2733">
+          <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6b7c86">KALMAN / EKF2 ÇAPRAZ KONTROL</span>
+          <span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:#00e676;border:1px solid rgba(0,230,118,0.4);background:rgba(0,230,118,0.09);border-radius:3px;padding:2px 7px">● GERÇEK</span>
+        </div>
+        <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px;overflow:auto">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <div style="background:#0a0e13;border:1px solid #1c2733;border-radius:4px;padding:7px 9px">
+              <div style="font-size:9px;letter-spacing:1.5px;color:#6b7c86;margin-bottom:2px">KF ROLL</div>
+              <div style="font-size:15px;font-weight:700;color:#d7e6df;font-variant-numeric:tabular-nums">{{ kfRollStr }}°</div>
+            </div>
+            <div style="background:#0a0e13;border:1px solid #1c2733;border-radius:4px;padding:7px 9px">
+              <div style="font-size:9px;letter-spacing:1.5px;color:#6b7c86;margin-bottom:2px">KF PITCH</div>
+              <div style="font-size:15px;font-weight:700;color:#d7e6df;font-variant-numeric:tabular-nums">{{ kfPitchStr }}°</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <div style="display:flex;justify-content:space-between;font-size:10px;letter-spacing:1px">
+              <span style="color:#6b7c86">ΔROLL <span style="color:#6b7c86;opacity:0.7">(KF−EKF2)</span></span>
+              <span style="font-weight:700;font-variant-numeric:tabular-nums;color: {{ dRollColor }}">{{ dRollStr }}°</span>
+            </div>
+            <div style="height:7px;background:#0a0e13;border:1px solid #1c2733;border-radius:3px;overflow:hidden">
+              <div style="height:100%;border-radius:2px;transition:width 120ms linear;background: {{ dRollColor }};width: {{ dRollPct }}%"></div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <div style="display:flex;justify-content:space-between;font-size:10px;letter-spacing:1px">
+              <span style="color:#6b7c86">ΔPITCH <span style="color:#6b7c86;opacity:0.7">(KF−EKF2)</span></span>
+              <span style="font-weight:700;font-variant-numeric:tabular-nums;color: {{ dPitchColor }}">{{ dPitchStr }}°</span>
+            </div>
+            <div style="height:7px;background:#0a0e13;border:1px solid #1c2733;border-radius:3px;overflow:hidden">
+              <div style="height:100%;border-radius:2px;transition:width 120ms linear;background: {{ dPitchColor }};width: {{ dPitchPct }}%"></div>
+            </div>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:#6b7c86;letter-spacing:1px;border-top:1px dashed #1c2733;padding-top:7px">
+            <span>SAPMA EŞİĞİ</span>
+            <span style="color:#d7e6df;font-weight:700">{{ thresholdStr }}°</span>
+          </div>
+          <sc-if value="{{ anomaly }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;justify-content:center;gap:10px;border:1px solid rgba(255,82,82,0.7);border-radius:4px;padding:9px 10px;animation:gcsAlarmPulse 0.9s infinite">
+              <span style="font-size:13px;font-weight:800;letter-spacing:2px;color:#ff5252;animation:gcsBlink 0.9s infinite">⚠ ANOMALİ</span>
+              <span style="font-size:10px;color:#ff8a80;letter-spacing:1px">KF/EKF2 SAPMA &gt; EŞİK</span>
+            </div>
+          </sc-if>
+          <sc-if value="{{ nominal }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;align-items:center;justify-content:center;gap:10px;border:1px solid #1c2733;background:rgba(0,230,118,0.05);border-radius:4px;padding:9px 10px">
+              <span style="font-size:12px;font-weight:800;letter-spacing:2px;color:#00e676">● NOMİNAL</span>
+              <span style="font-size:10px;color:#6b7c86;letter-spacing:1px">SAPMA EŞİK ALTINDA</span>
+            </div>
+          </sc-if>
+        </div>
+      </div>
+    </div>
 
-  </main>
+    <!-- ==== CENTER: MAP ==== -->
+    <div data-screen-label="Taktik Harita" style="position:relative;background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);overflow:hidden;min-height:0">
+      <div ref="{{ mapRef }}" style="position:absolute;inset:0"></div>
+      <div style="position:absolute;top:10px;left:10px;z-index:1000;display:flex;flex-wrap:wrap;gap:6px;max-width:70%">
+        <span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#00e676;border:1px solid rgba(0,230,118,0.45);background:rgba(10,12,15,0.85);border-radius:3px;padding:3px 8px;backdrop-filter:blur(4px)">KONUM: SABİT — GERÇEK HIL_GPS FIX</span>
+        <span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#ffab40;border:1px solid rgba(255,171,64,0.45);background:rgba(10,12,15,0.85);border-radius:3px;padding:3px 8px;backdrop-filter:blur(4px)">WAYPOINT: DEMO</span>
+        <span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#ff5252;border:1px solid rgba(255,82,82,0.45);background:rgba(10,12,15,0.85);border-radius:3px;padding:3px 8px;backdrop-filter:blur(4px)">NFZ: DEMO</span>
+      </div>
+      <div style="position:absolute;top:10px;right:10px;z-index:1000;display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+        <div style="background:rgba(10,12,15,0.85);border:1px solid #1c2733;border-radius:4px;padding:5px 10px;backdrop-filter:blur(4px)">
+          <span style="font-size:9px;letter-spacing:1.5px;color:#6b7c86">HDG </span>
+          <span style="font-size:13px;font-weight:800;color:#00e676;font-variant-numeric:tabular-nums">{{ hdgStr }}°</span>
+        </div>
+        <div style="background:rgba(10,12,15,0.85);border:1px solid #1c2733;border-radius:4px;padding:5px 10px;backdrop-filter:blur(4px)">
+          <span style="font-size:9px;letter-spacing:1.5px;color:#6b7c86">ALT </span>
+          <span style="font-size:13px;font-weight:800;color:#d7e6df;font-variant-numeric:tabular-nums">{{ altStr }} m</span>
+        </div>
+      </div>
+      <sc-if value="{{ stale }}" hint-placeholder-val="{{ false }}">
+        <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1001;background:rgba(10,12,15,0.92);border:1px solid rgba(255,82,82,0.7);border-radius:4px;padding:10px 18px;text-align:center;animation:gcsAlarmPulse 1.2s infinite">
+          <div style="font-size:14px;font-weight:800;letter-spacing:3px;color:#ff5252">VERİ BAYAT</div>
+          <div style="font-size:9px;color:#ff8a80;letter-spacing:1px;margin-top:2px">SON GEÇERLİ DEĞERLER GÖSTERİLİYOR — {{ ageStr }}</div>
+        </div>
+      </sc-if>
+      <div style="position:absolute;left:10px;bottom:10px;z-index:1000;background:rgba(10,12,15,0.88);border:1px solid rgba(0,230,118,0.35);border-radius:4px;padding:7px 11px;backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(0,0,0,0.5)">
+        <div style="font-size:9px;letter-spacing:1.5px;color:#6b7c86;margin-bottom:2px">İMLEÇ · MGRS</div>
+        <div style="font-size:13px;font-weight:700;letter-spacing:1px;color:#00e676;font-variant-numeric:tabular-nums">{{ mgrsText }}</div>
+        <div style="font-size:9px;color:#6b7c86;font-variant-numeric:tabular-nums;margin-top:1px">{{ latlonText }}</div>
+      </div>
+    </div>
 
-  <footer id="bottom-panel">
-    <section class="panel" id="sparkline-panel">
-      <h2>SENSÖR — İVME / GYRO <span class="badge real">GERÇEK</span></h2>
-      <canvas id="spark-canvas" width="900" height="90"></canvas>
-    </section>
-    <section class="panel" id="can-panel">
-      <h2>CAN BUS <span class="badge derived">YENİDEN KODLANMIŞ</span></h2>
-      <table id="can-table">
-        <thead><tr><th>ID</th><th>ETİKET</th><th>BYTES</th></tr></thead>
-        <tbody id="can-tbody"></tbody>
-      </table>
-    </section>
-  </footer>
+    <!-- ==== RIGHT COLUMN ==== -->
+    <div style="display:flex;flex-direction:column;gap:8px;min-height:0">
 
+      <!-- COMMAND -->
+      <div data-screen-label="Komuta" style="flex:none;background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #1c2733">
+          <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6b7c86">KOMUTA</span>
+          <span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:#ff5252;border:1px solid rgba(255,82,82,0.45);background:rgba(255,82,82,0.09);border-radius:3px;padding:2px 7px">UPLINK: OFFLINE</span>
+        </div>
+        <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:6px">
+            <button onClick="{{ cmdArm }}" style="font-family:inherit;font-size:10px;font-weight:800;letter-spacing:1px;color:#00e676;background:rgba(0,230,118,0.06);border:1px solid rgba(0,230,118,0.4);border-radius:4px;padding:9px 4px;cursor:pointer" style-hover="background:rgba(0,230,118,0.14)">ARM</button>
+            <button onClick="{{ cmdDisarm }}" style="font-family:inherit;font-size:10px;font-weight:800;letter-spacing:1px;color:#d7e6df;background:#0a0e13;border:1px solid #1c2733;border-radius:4px;padding:9px 4px;cursor:pointer" style-hover="border-color:#2c3d4d">DISARM</button>
+            <button onClick="{{ cmdHold }}" style="font-family:inherit;font-size:10px;font-weight:800;letter-spacing:1px;color:#d7e6df;background:#0a0e13;border:1px solid #1c2733;border-radius:4px;padding:9px 4px;cursor:pointer" style-hover="border-color:#2c3d4d">HOLD</button>
+            <button onClick="{{ cmdRtl }}" style="font-family:inherit;font-size:10px;font-weight:800;letter-spacing:1px;color:#ffab40;background:rgba(255,171,64,0.06);border:1px solid rgba(255,171,64,0.4);border-radius:4px;padding:9px 4px;cursor:pointer" style-hover="background:rgba(255,171,64,0.14)">RTL</button>
+          </div>
+          <div style="font-size:9px;line-height:1.5;color:#6b7c86;border-left:2px solid rgba(255,82,82,0.4);padding-left:8px">Komuta hattı (uplink) bağlı değil — komutlar araca GÖNDERİLMEZ, yalnızca alarm günlüğüne DEMO olarak kaydedilir.</div>
+        </div>
+      </div>
+
+      <!-- GPS + BATTERY -->
+      <div data-screen-label="GPS ve Batarya" style="flex:none;background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #1c2733">
+          <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6b7c86">GPS SAĞLIK · BATARYA</span>
+          <span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:#6a89ff;border:1px solid rgba(106,137,255,0.45);background:rgba(106,137,255,0.09);border-radius:3px;padding:2px 7px">● SIM</span>
+        </div>
+        <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+            <div style="background:#0a0e13;border:1px solid #1c2733;border-radius:4px;padding:6px 8px;text-align:center">
+              <div style="font-size:8px;letter-spacing:1px;color:#6b7c86;margin-bottom:2px">FIX</div>
+              <div style="font-size:12px;font-weight:800;color:#6a89ff">3D</div>
+            </div>
+            <div style="background:#0a0e13;border:1px solid #1c2733;border-radius:4px;padding:6px 8px;text-align:center">
+              <div style="font-size:8px;letter-spacing:1px;color:#6b7c86;margin-bottom:2px">UYDU</div>
+              <div style="font-size:12px;font-weight:800;color:#6a89ff;font-variant-numeric:tabular-nums">{{ satStr }}</div>
+            </div>
+            <div style="background:#0a0e13;border:1px solid #1c2733;border-radius:4px;padding:6px 8px;text-align:center">
+              <div style="font-size:8px;letter-spacing:1px;color:#6b7c86;margin-bottom:2px">HDOP</div>
+              <div style="font-size:12px;font-weight:800;color:#6a89ff;font-variant-numeric:tabular-nums">{{ hdopStr }}</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px">
+            <div style="flex:none;text-align:center;background:#0a0e13;border:1px solid #1c2733;border-radius:4px;padding:5px 10px">
+              <div style="font-size:8px;letter-spacing:1px;color:#6b7c86">VOLTAJ</div>
+              <div style="font-size:14px;font-weight:800;color:#6a89ff;font-variant-numeric:tabular-nums">{{ voltStr }}<span style="font-size:9px;color:#6b7c86"> V</span></div>
+            </div>
+            <div style="flex:1;display:flex;flex-direction:column;gap:3px">
+              <div style="display:flex;justify-content:space-between;font-size:9px;letter-spacing:1px">
+                <span style="color:#6b7c86">DOLULUK</span>
+                <span style="color:#6a89ff;font-weight:800;font-variant-numeric:tabular-nums">{{ pctStr }}%</span>
+              </div>
+              <div style="height:11px;background:#0a0e13;border:1px solid #1c2733;border-radius:3px;overflow:hidden;position:relative">
+                <div style="height:100%;background:linear-gradient(90deg,#3d5bd9,#6a89ff);width: {{ pctStr }}%;transition:width 400ms ease"></div>
+                <div style="position:absolute;inset:0;background:repeating-linear-gradient(90deg,transparent 0 24%,rgba(10,14,19,0.9) 24% 25%)"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- FREERTOS -->
+      <div data-screen-label="FreeRTOS Monitör" style="flex:none;background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #1c2733">
+          <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6b7c86">FREERTOS TASK MONİTÖR</span>
+          <span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:#ff5252;border:1px solid rgba(255,82,82,0.45);background:rgba(255,82,82,0.09);border-radius:3px;padding:2px 7px"><span style="animation:gcsBlink 1.4s infinite">●</span> OFFLINE</span>
+        </div>
+        <div style="padding:8px 12px 10px">
+          <div style="display:grid;grid-template-columns:1.4fr 0.8fr 1fr;border:1px solid #1c2733;border-radius:4px;overflow:hidden;opacity:0.45">
+            <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:4px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">TASK</div>
+            <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:4px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">DURUM</div>
+            <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:4px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">STACK WM</div>
+            <div style="font-size:10px;color:#3a4a56;padding:5px 8px">IMU_Task</div>
+            <div style="font-size:10px;color:#3a4a56;padding:5px 8px">—</div>
+            <div style="font-size:10px;color:#3a4a56;padding:5px 8px">—</div>
+            <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">CAN_Task</div>
+            <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">—</div>
+            <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">—</div>
+            <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">WDG_Task</div>
+            <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">—</div>
+            <div style="font-size:10px;color:#3a4a56;padding:5px 8px;border-top:1px solid #141b23">—</div>
+          </div>
+          <div style="font-size:9px;line-height:1.5;color:#6b7c86;margin-top:7px;border-left:2px solid rgba(255,82,82,0.4);padding-left:8px">{{ rtosReason }}</div>
+        </div>
+      </div>
+
+      <!-- ALARM HISTORY -->
+      <div data-screen-label="Alarm Geçmişi" style="flex:1;min-height:110px;background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);display:flex;flex-direction:column;overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #1c2733">
+          <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6b7c86">ALARM GEÇMİŞİ</span>
+          <span style="font-size:10px;color:#6b7c86;font-variant-numeric:tabular-nums">{{ alarmCount }} KAYIT · tıkla → anlık değerler</span>
+        </div>
+        <div style="flex:1;overflow-y:auto;padding:6px 8px;display:flex;flex-direction:column;gap:4px">
+          <sc-for list="{{ alarms }}" as="al" hint-placeholder-count="4">
+            <div onClick="{{ al.onToggle }}" style="border:1px solid {{ al.border }};background: {{ al.bg }};border-radius:3px;padding:5px 8px;cursor:pointer" style-hover="filter:brightness(1.2)">
+              <div style="display:flex;gap:8px;align-items:baseline">
+                <span style="flex:none;font-size:8px;font-weight:800;letter-spacing:1px;color: {{ al.tagColor }};border:1px solid {{ al.tagBorder }};border-radius:2px;padding:1px 4px">{{ al.tag }}</span>
+                <span style="flex:none;font-size:9px;color:#6b7c86;font-variant-numeric:tabular-nums">{{ al.time }}</span>
+                <span style="font-size:10px;line-height:1.35;letter-spacing:0.3px;color: {{ al.color }};font-weight: {{ al.weight }}">{{ al.text }}</span>
+              </div>
+              <div style="display: {{ al.snapDisplay }};margin-top:5px;border-top:1px dashed #1c2733;padding-top:5px;font-size:9px;color:#6b7c86;font-variant-numeric:tabular-nums;letter-spacing:0.5px">{{ al.snapText }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== BOTTOM BAR ===== -->
+  <div style="display:grid;grid-template-columns:330px minmax(0,1fr) 460px;gap:8px;min-height:0">
+
+    <!-- ATTITUDE HISTORY -->
+    <div data-screen-label="Attitude Geçmişi" style="background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);display:flex;flex-direction:column;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 12px;border-bottom:1px solid #1c2733">
+        <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6b7c86">ATTITUDE — 60 sn</span>
+        <span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:#00e676;border:1px solid rgba(0,230,118,0.4);background:rgba(0,230,118,0.09);border-radius:3px;padding:2px 7px">● GERÇEK</span>
+      </div>
+      <div style="flex:1;min-height:0;display:flex;flex-direction:column;gap:4px;padding:8px 12px 10px">
+        <div style="display:flex;gap:12px;font-size:9px;letter-spacing:1px;align-items:baseline">
+          <span style="color:#00e676">— ROLL</span>
+          <span style="color:#6a89ff">— PITCH</span>
+          <span style="color:#ff5252">▮ ANOMALİ</span>
+        </div>
+        <canvas ref="{{ attRef }}" style="flex:1;min-height:0;width:100%;background:#0a0e13;border:1px solid #1c2733;border-radius:4px"></canvas>
+      </div>
+    </div>
+
+    <!-- SENSOR SPARKLINES -->
+    <div data-screen-label="Sensör" style="background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);display:flex;flex-direction:column;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 12px;border-bottom:1px solid #1c2733">
+        <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6b7c86">SENSÖR — İVME / GYRO</span>
+        <span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:#00e676;border:1px solid rgba(0,230,118,0.4);background:rgba(0,230,118,0.09);border-radius:3px;padding:2px 7px">● GERÇEK</span>
+      </div>
+      <div style="flex:1;min-height:0;display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 12px 10px">
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+          <div style="display:flex;gap:10px;font-size:9px;letter-spacing:1px;align-items:baseline">
+            <span style="color:#6b7c86;font-weight:700">İVME m/s²</span>
+            <span style="color:#00e676">X <span style="font-variant-numeric:tabular-nums">{{ axStr }}</span></span>
+            <span style="color:#6a89ff">Y <span style="font-variant-numeric:tabular-nums">{{ ayStr }}</span></span>
+            <span style="color:#ffd54f">Z <span style="font-variant-numeric:tabular-nums">{{ azStr }}</span></span>
+          </div>
+          <canvas ref="{{ accelRef }}" style="flex:1;min-height:0;width:100%;background:#0a0e13;border:1px solid #1c2733;border-radius:4px"></canvas>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;min-width:0">
+          <div style="display:flex;gap:10px;font-size:9px;letter-spacing:1px;align-items:baseline">
+            <span style="color:#6b7c86;font-weight:700">GYRO rad/s</span>
+            <span style="color:#00e676">X <span style="font-variant-numeric:tabular-nums">{{ gxStr }}</span></span>
+            <span style="color:#6a89ff">Y <span style="font-variant-numeric:tabular-nums">{{ gyStr }}</span></span>
+            <span style="color:#ffd54f">Z <span style="font-variant-numeric:tabular-nums">{{ gzStr }}</span></span>
+          </div>
+          <canvas ref="{{ gyroRef }}" style="flex:1;min-height:0;width:100%;background:#0a0e13;border:1px solid #1c2733;border-radius:4px"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- CAN BUS -->
+    <div data-screen-label="CAN Bus" style="background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);display:flex;flex-direction:column;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 12px;border-bottom:1px solid #1c2733">
+        <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6b7c86">CAN BUS</span>
+        <span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color:#ffd54f;border:1px solid rgba(255,213,79,0.45);background:rgba(255,213,79,0.09);border-radius:3px;padding:2px 7px">● YENİDEN KODLANMIŞ</span>
+      </div>
+      <div style="flex:1;overflow-y:auto;padding:8px 12px">
+        <div style="display:grid;grid-template-columns:52px 52px 1fr 132px;border:1px solid #1c2733;border-radius:4px;overflow:hidden">
+          <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:5px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">ID</div>
+          <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:5px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">ETİKET</div>
+          <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:5px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">BYTES</div>
+          <div style="font-size:9px;letter-spacing:1px;color:#6b7c86;padding:5px 8px;background:#0a0e13;border-bottom:1px solid #1c2733">ÇÖZÜM (int16 LE ÷100)</div>
+          <sc-for list="{{ canRows }}" as="fr" hint-placeholder-count="3">
+            <div style="display:grid;grid-template-columns:52px 52px 1fr 132px;grid-column:1 / -1;border-top:1px solid #141b23">
+              <div style="font-size:11px;font-weight:700;color:#ffd54f;padding:7px 8px">{{ fr.id }}</div>
+              <div style="font-size:11px;color:#d7e6df;padding:7px 8px">{{ fr.label }}</div>
+              <div style="font-size:11px;letter-spacing:1px;font-variant-numeric:tabular-nums;padding:7px 8px;color: {{ fr.bytesColor }};font-style: {{ fr.bytesStyle }}">{{ fr.bytesText }}</div>
+              <div style="font-size:10px;font-variant-numeric:tabular-nums;padding:7px 8px;color: {{ fr.decColor }}">{{ fr.decoded }}</div>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;wsUrl&quot;: { &quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Veri Kaynağı&quot;, &quot;description&quot;: &quot;ws://&lt;host&gt;/ws/telemetry — boş bırakılırsa MOCK besleme (şema birebir)&quot; },
+  &quot;anomalyDemo&quot;: { &quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;, &quot;section&quot;: &quot;Veri Kaynağı&quot;, &quot;description&quot;: &quot;Periyodik KF/EKF2 anomali senaryosu (yalnızca MOCK modda)&quot; },
+  &quot;mapLayer&quot;: { &quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;uydu&quot;, &quot;taktik&quot;], &quot;default&quot;: &quot;uydu&quot;, &quot;tsType&quot;: &quot;string&quot;, &quot;section&quot;: &quot;Harita&quot; }
+}">
+class Component extends DCLogic {
+  mapRef = React.createRef();
+  accelRef = React.createRef();
+  gyroRef = React.createRef();
+  attRef = React.createRef();
 
-<script src="/static/vendor/maplibre-gl.js"></script>
-<script src="/static/vendor/mgrs.js"></script>
-<script src="/static/app.js"></script>
+  state = {
+    tele: null,
+    alarms: [],
+    expandedAlarm: null,
+    mgrsText: "— harita üzerinde gezdirin —",
+    latlonText: "",
+    feed: "mock",       // mock | live | stale | waiting
+    rateHz: 15.0,
+    ageMs: 66,
+    jitterMs: 0,
+    recording: false,
+    recCount: 0
+  };
+
+  componentDidMount() {
+    this.t0 = Date.now();
+    this.simT = 0;
+    this.accelHist = [];
+    this.gyroHist = [];
+    this.attHist = [];
+    this.prevAnomaly = false;
+    this.wsData = null;
+    this.wsLast = 0;
+    this.msgTimes = [];
+    this.alarmSeq = 0;
+    this.rec = null;
+    this.schemaWarned = false;
+    this.wsUrlActive = "";
+
+    this.pushAlarm("SİSTEM BAŞLATILDI — GCS arayüzü hazır", "info");
+    let wsUrl = (this.props.wsUrl ?? "").trim();
+    if (!wsUrl || wsUrl.indexOf("<") !== -1) {
+      // No wsUrl prop configured (standalone/self-hosted case) - default to
+      // this same origin's real telemetry endpoint (tools/gcs_web/server.py)
+      // instead of falling back to MOCK, so the exported page just works
+      // when served by our own backend.
+      const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+      wsUrl = proto + "//" + window.location.host + "/ws/telemetry";
+    }
+    this.wsUrlActive = wsUrl;
+    this.connectWs(wsUrl);
+    this.pushAlarm("WS modu — bağlantı bekleniyor: " + wsUrl, "info");
+
+    this.timer = setInterval(() => this.tick(), 66);
+    this.initMap();
+  }
+
+  componentWillUnmount() {
+    clearInterval(this.timer);
+    if (this.ws) { try { this.ws.close(); } catch (e) {} }
+    if (this.map) { this.map.remove(); this.map = null; }
+  }
+
+  componentDidUpdate(prevProps) {
+    if (prevProps.mapLayer !== this.props.mapLayer && this.map) this.applyBaseLayer();
+  }
+
+  connectWs(url) {
+    try {
+      this.ws = new WebSocket(url);
+      this.ws.onopen = () => this.pushAlarm("LINK KURULDU — " + url, "info");
+      this.ws.onmessage = (ev) => {
+        try {
+          this.wsData = JSON.parse(ev.data);
+          this.wsLast = Date.now();
+          this.msgTimes.push(this.wsLast);
+          if (this.msgTimes.length > 30) this.msgTimes.shift();
+        } catch (e) {}
+      };
+      this.ws.onclose = () => {
+        this.pushAlarm("LINK KOPTU — yeniden deneme 3 sn", "alarm");
+        setTimeout(() => { if (this.timer) this.connectWs(url); }, 3000);
+      };
+      this.ws.onerror = () => {};
+    } catch (e) {
+      this.pushAlarm("WebSocket bağlantı hatası: " + url, "alarm");
+    }
+  }
+
+  mockTelemetry() {
+    const t = (this.simT += 1 / 15);
+    const roll = 24 * Math.sin(t * 0.35) + 6 * Math.sin(t * 1.31) + (Math.random() - 0.5) * 0.4;
+    const pitch = 12 * Math.sin(t * 0.27 + 1.1) + 3 * Math.sin(t * 0.93) + (Math.random() - 0.5) * 0.3;
+    const yaw = ((t * 4.2) % 360 + 360) % 360;
+    const demoOn = this.props.anomalyDemo ?? true;
+    const phase = t % 45;
+    const anomaly = demoOn && phase > 30 && phase < 36;
+    const d_roll = anomaly ? 21.5 + 3 * Math.sin(t * 2.2) : 0.4 + 0.35 * Math.sin(t * 0.8) + Math.random() * 0.15;
+    const d_pitch = 0.3 + 0.25 * Math.sin(t * 0.6 + 2) + Math.random() * 0.1;
+    const r = roll * Math.PI / 180, p = pitch * Math.PI / 180, g = 9.81;
+    const ax = -g * Math.sin(p) + (Math.random() - 0.5) * 0.12;
+    const ay = g * Math.sin(r) * Math.cos(p) + (Math.random() - 0.5) * 0.12;
+    const az = g * Math.cos(r) * Math.cos(p) + (Math.random() - 0.5) * 0.12;
+    const gx = 24 * 0.35 * Math.cos(t * 0.35) * Math.PI / 180;
+    const gy = 12 * 0.27 * Math.cos(t * 0.27 + 1.1) * Math.PI / 180;
+    const gz = 4.2 * Math.PI / 180 + (Math.random() - 0.5) * 0.002;
+    const h16 = (v) => {
+      let n = Math.round(v * 100) & 0xffff;
+      const lo = (n & 0xff).toString(16).padStart(2, "0").toUpperCase();
+      const hi = ((n >> 8) & 0xff).toString(16).padStart(2, "0").toUpperCase();
+      return lo + " " + hi;
+    };
+    return {
+      schema_ver: "1.0",
+      t: Date.now() / 1000,
+      uptime_s: (Date.now() - this.t0) / 1000,
+      mode: "HITL",
+      link: "OK",
+      attitude: { roll, pitch, yaw, real: true },
+      kalman: { roll: roll + d_roll * (anomaly ? -1 : 0.3), pitch: pitch + d_pitch * 0.5, d_roll, d_pitch, anomaly, threshold: 20.0, real: true },
+      sensor: { accel: [ax, ay, az], gyro: [gx, gy, gz], real: true },
+      position: { lat: 39.7767, lon: 30.5206, alt: 800.0, heading: yaw, static: true, real: true },
+      battery: { voltage: 12.6 - 1.6 * Math.min(1, ((Date.now() - this.t0) / 1000) / 3600), percent: Math.max(5, Math.round(76 - ((Date.now() - this.t0) / 1000) / 60)), sim: true },
+      can: { frames: [
+        { id: "0x101", label: "accel", bytes: h16(ax) + " " + h16(ay) + " " + h16(az) + " 00 00", pending: false },
+        { id: "0x102", label: "baro", bytes: null, pending: true },
+        { id: "0x103", label: "mag", bytes: null, pending: true }
+      ] },
+      freertos: { available: false, reason: "no wire path from WDG_Task to PC" }
+    };
+  }
+
+  tick() {
+    const now = Date.now();
+    let tele = null, feed;
+
+    if (this.wsUrlActive) {
+      if (this.wsData) {
+        tele = this.wsData;
+        feed = (now - this.wsLast) > 1000 ? "stale" : "live";
+        if (feed === "stale" && this.state.feed !== "stale") this.pushAlarm("HEARTBEAT KAYBI — telemetri > 1 sn gecikti, son geçerli değerler donduruldu", "alarm", tele);
+        if (feed === "live" && this.state.feed === "stale") this.pushAlarm("Heartbeat geri geldi — canlı akış devam ediyor", "clear");
+      } else {
+        feed = "waiting";
+      }
+    } else {
+      tele = this.mockTelemetry();
+      feed = "mock";
+    }
+
+    // link quality metrics
+    let rateHz = feed === "mock" ? 15.0 : 0;
+    let jitterMs = feed === "mock" ? 1 : 0;
+    let ageMs = feed === "mock" ? 66 : (this.wsLast ? now - this.wsLast : 0);
+    if (this.msgTimes.length > 5) {
+      const iv = [];
+      for (let i = 1; i < this.msgTimes.length; i++) iv.push(this.msgTimes[i] - this.msgTimes[i - 1]);
+      const mean = iv.reduce((a, b) => a + b, 0) / iv.length;
+      rateHz = mean > 0 ? 1000 / mean : 0;
+      jitterMs = Math.sqrt(iv.reduce((a, b) => a + (b - mean) * (b - mean), 0) / iv.length);
+    }
+
+    if (tele && feed !== "stale") {
+      // schema check
+      if (!this.schemaWarned) {
+        const sv = tele.schema_ver;
+        if (!sv) {
+          this.pushAlarm("ŞEMA UYARISI — telemetride schema_ver alanı yok (ICD dışı besleme)", "alarm");
+          this.schemaWarned = true;
+        } else if (parseInt(sv) !== 1) {
+          this.pushAlarm("ŞEMA UYUMSUZ — beklenen v1.x, gelen v" + sv, "alarm");
+          this.schemaWarned = true;
+        }
+      }
+
+      this.accelHist.push(tele.sensor.accel.slice());
+      this.gyroHist.push(tele.sensor.gyro.slice());
+      this.attHist.push({ r: tele.attitude.roll, p: tele.attitude.pitch, a: !!tele.kalman.anomaly });
+      if (this.accelHist.length > 180) this.accelHist.shift();
+      if (this.gyroHist.length > 180) this.gyroHist.shift();
+      if (this.attHist.length > 900) this.attHist.shift();
+
+      const an = !!(tele.kalman && tele.kalman.anomaly);
+      if (an && !this.prevAnomaly) {
+        this.pushAlarm("KF/EKF2 SAPMA — ΔROLL " + tele.kalman.d_roll.toFixed(2) + "° > eşik " + tele.kalman.threshold.toFixed(1) + "°", "alarm", tele);
+      } else if (!an && this.prevAnomaly) {
+        this.pushAlarm("Anomali temizlendi — sapma eşik altına döndü", "clear", tele);
+      }
+      this.prevAnomaly = an;
+
+      // blackbox recording
+      if (this.rec) {
+        this.rec.rows.push([
+          tele.t, tele.uptime_s,
+          tele.attitude.roll, tele.attitude.pitch, tele.attitude.yaw,
+          tele.kalman.roll, tele.kalman.pitch, tele.kalman.d_roll, tele.kalman.d_pitch, an ? 1 : 0,
+          tele.sensor.accel[0], tele.sensor.accel[1], tele.sensor.accel[2],
+          tele.sensor.gyro[0], tele.sensor.gyro[1], tele.sensor.gyro[2],
+          tele.position.lat, tele.position.lon, tele.position.alt, tele.position.heading,
+          tele.battery.voltage, tele.battery.percent
+        ].map((v) => typeof v === "number" ? +v.toFixed(6) : v).join(","));
+      }
+    }
+
+    this.setState({
+      tele: tele || this.state.tele,
+      feed, rateHz, ageMs, jitterMs,
+      recCount: this.rec ? this.rec.rows.length : this.state.recCount
+    });
+    this.drawSpark(this.accelRef.current, this.accelHist, 12);
+    this.drawSpark(this.gyroRef.current, this.gyroHist, 0.5);
+    this.drawAtt(this.attRef.current);
+    if (tele) this.updateMapDynamics(tele);
+  }
+
+  pushAlarm(text, kind, tele) {
+    const time = new Date().toTimeString().slice(0, 8);
+    const id = ++this.alarmSeq;
+    let snap = null;
+    if (tele && tele.attitude) {
+      snap = "SNAPSHOT → ROLL " + tele.attitude.roll.toFixed(2) + "° · PITCH " + tele.attitude.pitch.toFixed(2) +
+        "° · YAW " + tele.attitude.yaw.toFixed(2) + "° · ΔR " + tele.kalman.d_roll.toFixed(2) + "° · ΔP " + tele.kalman.d_pitch.toFixed(2) + "°";
+    }
+    this.setState((s) => ({ alarms: [{ id, time, text, kind, snap }].concat(s.alarms).slice(0, 40) }));
+  }
+
+  demoCmd(name) {
+    this.pushAlarm("KOMUT REDDEDİLDİ (DEMO): " + name + " — uplink hattı bağlı değil, araca gönderilmedi", "demo", this.state.tele);
+  }
+
+  toggleRecording() {
+    if (this.rec) {
+      const header = "t,uptime_s,roll,pitch,yaw,kf_roll,kf_pitch,d_roll,d_pitch,anomaly,ax,ay,az,gx,gy,gz,lat,lon,alt,heading,voltage,percent";
+      const csv = header + "\n" + this.rec.rows.join("\n");
+      const n = this.rec.rows.length;
+      const blob = new Blob([csv], { type: "text/csv" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = "gcs-blackbox-" + new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19) + ".csv";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      this.rec = null;
+      this.setState({ recording: false });
+      this.pushAlarm("KAYIT DURDURULDU — " + n + " kare CSV olarak indirildi", "info");
+    } else {
+      this.rec = { rows: [] };
+      this.setState({ recording: true, recCount: 0 });
+      this.pushAlarm("KARAKUTU KAYDI BAŞLADI — telemetri CSV'ye yazılıyor", "info");
+    }
+  }
+
+  drawSpark(cv, hist, lim) {
+    if (!cv || hist.length < 2) return;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    if (cv.width !== w * 2 || cv.height !== h * 2) { cv.width = w * 2; cv.height = h * 2; }
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(2, 0, 0, 2, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    ctx.strokeStyle = "#1c2733";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+    const colors = ["#00e676", "#6a89ff", "#ffd54f"];
+    for (let i = 0; i < 3; i++) {
+      ctx.strokeStyle = colors[i];
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      for (let j = 0; j < hist.length; j++) {
+        const x = (j / 179) * w;
+        const y = h / 2 - Math.max(-1, Math.min(1, hist[j][i] / lim)) * (h / 2 - 4);
+        j === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  drawAtt(cv) {
+    const hist = this.attHist;
+    if (!cv || !hist || hist.length < 2) return;
+    const w = cv.clientWidth, h = cv.clientHeight;
+    if (!w || !h) return;
+    if (cv.width !== w * 2 || cv.height !== h * 2) { cv.width = w * 2; cv.height = h * 2; }
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(2, 0, 0, 2, 0, 0);
+    ctx.clearRect(0, 0, w, h);
+    const N = 900;
+    // anomaly bands first
+    ctx.fillStyle = "rgba(255,82,82,0.18)";
+    let bandStart = -1;
+    for (let j = 0; j <= hist.length; j++) {
+      const a = j < hist.length && hist[j].a;
+      if (a && bandStart < 0) bandStart = j;
+      if (!a && bandStart >= 0) {
+        ctx.fillRect((bandStart / (N - 1)) * w, 0, Math.max(1, ((j - bandStart) / (N - 1)) * w), h);
+        bandStart = -1;
+      }
+    }
+    ctx.strokeStyle = "#1c2733";
+    ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(0, h / 2); ctx.lineTo(w, h / 2); ctx.stroke();
+    const lim = 45;
+    const series = [{ k: "r", c: "#00e676" }, { k: "p", c: "#6a89ff" }];
+    for (const s of series) {
+      ctx.strokeStyle = s.c;
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      for (let j = 0; j < hist.length; j++) {
+        const x = (j / (N - 1)) * w;
+        const y = h / 2 - Math.max(-1, Math.min(1, hist[j][s.k] / lim)) * (h / 2 - 4);
+        j === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+  }
+
+  initMap() {
+    if (!window.L || !this.mapRef.current || !this.mapRef.current.clientHeight) {
+      this.mapRetry = setTimeout(() => this.initMap(), 150);
+      return;
+    }
+    const L = window.L;
+    const home = [39.7767, 30.5206];
+    this.home = home;
+    const map = L.map(this.mapRef.current, { zoomControl: false, attributionControl: false });
+    map.setView(home, 14);
+    this.map = map;
+    this.applyBaseLayer();
+
+    this.gridGroup = L.layerGroup().addTo(map);
+    map.on("moveend zoomend", () => this.redrawGrid());
+    this.redrawGrid();
+
+    const wps = [home, [39.7900, 30.5350], [39.7955, 30.5120], [39.7840, 30.4950], [39.7690, 30.5010], [39.7767, 30.5206]];
+    L.polyline(wps, { color: "#ffab40", weight: 2, dashArray: "7 6", opacity: 0.9 }).addTo(map);
+    wps.slice(1, -1).forEach((p, i) => {
+      L.circleMarker(p, { radius: 5, color: "#ffab40", weight: 2, fillColor: "#0a0c0f", fillOpacity: 1 })
+        .addTo(map)
+        .bindTooltip("WP" + (i + 1) + " · DEMO", { direction: "top", opacity: 0.9 });
+    });
+
+    L.circle([39.7620, 30.5560], { radius: 900, color: "#ff5252", weight: 2, dashArray: "8 6", fillColor: "#ff5252", fillOpacity: 0.10 })
+      .addTo(map)
+      .bindTooltip("NFZ · DEMO", { direction: "center", permanent: false });
+
+    this.fov = L.polygon([], { color: "#00e676", weight: 1, opacity: 0.5, fillColor: "#00e676", fillOpacity: 0.13 }).addTo(map);
+
+    const icon = L.divIcon({
+      className: "",
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+      html: '<div data-drone style="width:30px;height:30px;display:flex;align-items:center;justify-content:center;transform:rotate(0deg)"><div style="width:20px;height:24px;background:#00e676;clip-path:polygon(50% 0%, 92% 100%, 50% 76%, 8% 100%);filter:drop-shadow(0 0 6px rgba(0,230,118,0.9))"></div></div>'
+    });
+    this.droneMarker = L.marker(home, { icon, interactive: false, zIndexOffset: 1000 }).addTo(map);
+    L.circleMarker(home, { radius: 9, color: "rgba(0,230,118,0.5)", weight: 1.5, fill: false }).addTo(map);
+
+    map.on("mousemove", (e) => {
+      const { lat, lng } = e.latlng;
+      let m = null;
+      try { if (window.mgrs) m = window.mgrs.forward([lng, lat], 5); } catch (err) {}
+      this.setState({
+        mgrsText: m ? m.replace(/^(\d+[A-Z])([A-Z]{2})(\d{5})(\d{5})$/, "$1 $2 $3 $4") : "MGRS KÜTÜPHANESİ YOK",
+        latlonText: lat.toFixed(5) + "°N  " + lng.toFixed(5) + "°E"
+      });
+    });
+  }
+
+  applyBaseLayer() {
+    const L = window.L;
+    if (this.baseLayer) this.map.removeLayer(this.baseLayer);
+    const layer = (this.props.mapLayer ?? "uydu") === "taktik"
+      ? L.tileLayer("https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png", { maxZoom: 19 })
+      : L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { maxZoom: 18 });
+    this.baseLayer = layer.addTo(this.map);
+    layer.bringToBack();
+  }
+
+  redrawGrid() {
+    if (!this.map || !window.L) return;
+    const L = window.L;
+    this.gridGroup.clearLayers();
+    const z = this.map.getZoom();
+    const step = z >= 15 ? 0.005 : z >= 13 ? 0.01 : z >= 11 ? 0.05 : 0.2;
+    const b = this.map.getBounds().pad(0.1);
+    const style = { color: "#00e676", weight: 0.5, opacity: 0.22, interactive: false };
+    let count = 0;
+    for (let lat = Math.floor(b.getSouth() / step) * step; lat <= b.getNorth() && count < 60; lat += step, count++) {
+      this.gridGroup.addLayer(L.polyline([[lat, b.getWest()], [lat, b.getEast()]], style));
+    }
+    for (let lon = Math.floor(b.getWest() / step) * step; lon <= b.getEast() && count < 120; lon += step, count++) {
+      this.gridGroup.addLayer(L.polyline([[b.getSouth(), lon], [b.getNorth(), lon]], style));
+    }
+  }
+
+  updateMapDynamics(tele) {
+    if (!this.map || !this.droneMarker) return;
+    const hdg = tele.position.heading;
+    const el = this.droneMarker.getElement();
+    if (el) {
+      const inner = el.querySelector("[data-drone]");
+      if (inner) inner.style.transform = "rotate(" + hdg + "deg)";
+    }
+    const lat = tele.position.lat, lon = tele.position.lon;
+    const R = 650, half = 24;
+    const pts = [[lat, lon]];
+    for (let a = -half; a <= half; a += 6) {
+      const br = (hdg + a) * Math.PI / 180;
+      pts.push([lat + (R * Math.cos(br)) / 111320, lon + (R * Math.sin(br)) / (111320 * Math.cos(lat * Math.PI / 180))]);
+    }
+    this.fov.setLatLngs(pts);
+  }
+
+  decodeCan(f) {
+    if (f.pending || !f.bytes) return null;
+    try {
+      const b = f.bytes.trim().split(/\s+/).map((x) => parseInt(x, 16));
+      if (f.label === "accel" && b.length >= 6) {
+        const i16 = (lo, hi) => { let v = lo | (hi << 8); return v >= 0x8000 ? v - 0x10000 : v; };
+        const ax = i16(b[0], b[1]) / 100, ay = i16(b[2], b[3]) / 100, az = i16(b[4], b[5]) / 100;
+        const s = (v) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(2);
+        return "ax " + s(ax) + " ay " + s(ay) + " az " + s(az);
+      }
+    } catch (e) {}
+    return null;
+  }
+
+  renderVals() {
+    const T = this.state.tele || {
+      schema_ver: null,
+      mode: "HITL", uptime_s: 0, link: "OK",
+      attitude: { roll: 0, pitch: 0, yaw: 0 },
+      kalman: { roll: 0, pitch: 0, d_roll: 0, d_pitch: 0, anomaly: false, threshold: 20 },
+      sensor: { accel: [0, 0, 9.81], gyro: [0, 0, 0] },
+      position: { lat: 39.7767, lon: 30.5206, alt: 800, heading: 0 },
+      battery: { voltage: 11.1, percent: 76 },
+      can: { frames: [] },
+      freertos: { available: false, reason: "no wire path from WDG_Task to PC" }
+    };
+    const feed = this.state.feed;
+    const fmt = (v, d) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d == null ? 2 : d);
+    const up = Math.floor(T.uptime_s);
+    const uptimeStr = String(Math.floor(up / 3600)).padStart(2, "0") + ":" + String(Math.floor(up / 60) % 60).padStart(2, "0") + ":" + String(up % 60).padStart(2, "0");
+    const utcStr = new Date().toISOString().slice(11, 19);
+    const stale = feed === "stale";
+    const waiting = feed === "waiting";
+    const linkOk = T.link === "OK" && !stale && !waiting;
+    const an = !!T.kalman.anomaly;
+    const th = T.kalman.threshold || 20;
+    const dR = Math.abs(T.kalman.d_roll), dP = Math.abs(T.kalman.d_pitch);
+    const dCol = (d) => (d >= th ? "#ff5252" : d >= th * 0.5 ? "#ffab40" : "#00e676");
+
+    const alt = T.position.alt;
+    const pxPerM = 3.4;
+    const altTicks = [];
+    const base = Math.floor(alt / 5) * 5;
+    for (let v = base - 30; v <= base + 30; v += 5) {
+      const top = 103 - (v - alt) * pxPerM;
+      if (top < 16 || top > 198) continue;
+      const major = v % 10 === 0;
+      altTicks.push({ top: Math.round(top), w: major ? 12 : 7, label: major ? String(v) : "" });
+    }
+
+    const alarmStyle = {
+      alarm: { color: "#ff5252", border: "rgba(255,82,82,0.45)", bg: "rgba(255,82,82,0.08)", weight: 700, tag: "WRN", tagColor: "#ff5252", tagBorder: "rgba(255,82,82,0.5)" },
+      demo:  { color: "#ffab40", border: "rgba(255,171,64,0.35)", bg: "rgba(255,171,64,0.05)", weight: 400, tag: "DEMO", tagColor: "#ffab40", tagBorder: "rgba(255,171,64,0.5)" },
+      clear: { color: "#6b7c86", border: "#1c2733", bg: "transparent", weight: 400, tag: "CLR", tagColor: "#6b7c86", tagBorder: "#1c2733" },
+      info:  { color: "#d7e6df", border: "#1c2733", bg: "rgba(0,230,118,0.03)", weight: 400, tag: "ADV", tagColor: "#00e676", tagBorder: "rgba(0,230,118,0.35)" }
+    };
+
+    const feedMeta = {
+      mock:    { src: "MOCK",      color: "#6a89ff" },
+      live:    { src: "WS CANLI",  color: "#00e676" },
+      stale:   { src: "WS BAYAT",  color: "#ff5252" },
+      waiting: { src: "WS BEKLİYOR", color: "#ffab40" }
+    }[feed];
+
+    const schemaOk = T.schema_ver && parseInt(T.schema_ver) === 1;
+
+    return {
+      mapRef: this.mapRef, accelRef: this.accelRef, gyroRef: this.gyroRef, attRef: this.attRef,
+      mode: T.mode,
+      uptimeStr, utcStr,
+      rateStr: this.state.rateHz.toFixed(1),
+      ageStr: Math.round(this.state.ageMs) + " ms",
+      jitterStr: Math.round(this.state.jitterMs) + " ms",
+      ageColor: this.state.ageMs > 500 ? "#ff5252" : this.state.ageMs > 200 ? "#ffab40" : "#00e676",
+      feedSrc: feedMeta.src,
+      feedColor: feedMeta.color,
+      schemaStr: T.schema_ver ? "v" + T.schema_ver : "?",
+      schemaColor: schemaOk ? "#00e676" : "#ffd54f",
+      schemaBorder: schemaOk ? "rgba(0,230,118,0.4)" : "rgba(255,213,79,0.5)",
+      linkText: waiting ? "BAĞLANIYOR" : stale ? "VERİ BAYAT" : linkOk ? "LINK OK" : "LINK LOST",
+      linkColor: linkOk ? "#00e676" : stale || !waiting && !linkOk ? "#ff5252" : "#ffab40",
+      linkBorder: linkOk ? "rgba(0,230,118,0.4)" : "rgba(255,82,82,0.5)",
+      linkBg: linkOk ? "rgba(0,230,118,0.07)" : "rgba(255,82,82,0.1)",
+      stale,
+      recLabel: this.state.recording ? "■ DUR · " + this.state.recCount : "● KAYIT",
+      recColor: this.state.recording ? "#ff5252" : "#d7e6df",
+      recBg: this.state.recording ? "rgba(255,82,82,0.1)" : "#0a0e13",
+      recBorder: this.state.recording ? "rgba(255,82,82,0.6)" : "#1c2733",
+      toggleRec: () => this.toggleRecording(),
+      hudRollDeg: -T.attitude.roll,
+      hudPitchPx: T.attitude.pitch * 2.2,
+      rollStr: fmt(T.attitude.roll), pitchStr: fmt(T.attitude.pitch), yawStr: T.attitude.yaw.toFixed(2),
+      kfRollStr: fmt(T.kalman.roll), kfPitchStr: fmt(T.kalman.pitch),
+      dRollStr: fmt(T.kalman.d_roll), dPitchStr: fmt(T.kalman.d_pitch),
+      dRollPct: Math.min(100, (dR / th) * 100).toFixed(1),
+      dPitchPct: Math.min(100, (dP / th) * 100).toFixed(1),
+      dRollColor: dCol(dR), dPitchColor: dCol(dP),
+      thresholdStr: th.toFixed(1),
+      anomaly: an, nominal: !an,
+      hdgStr: T.position.heading.toFixed(1).padStart(5, "0"),
+      altStr: alt.toFixed(0),
+      altTicks,
+      satStr: "12", hdopStr: "0.9",
+      voltStr: T.battery.voltage.toFixed(1),
+      pctStr: String(T.battery.percent),
+      cmdArm: () => this.demoCmd("ARM"),
+      cmdDisarm: () => this.demoCmd("DISARM"),
+      cmdHold: () => this.demoCmd("HOLD"),
+      cmdRtl: () => this.demoCmd("RTL"),
+      rtosReason: "Veri yok: " + (T.freertos.reason || "firmware → PC telemetri hattı mevcut değil") + ". Sahte task verisi ÜRETİLMİYOR.",
+      alarmCount: this.state.alarms.length,
+      alarms: this.state.alarms.map((a) => Object.assign({
+        time: a.time, text: a.text,
+        snapText: a.snap || "Bu kayıt için anlık değer alınmadı",
+        snapDisplay: this.state.expandedAlarm === a.id ? "block" : "none",
+        onToggle: () => this.setState((s) => ({ expandedAlarm: s.expandedAlarm === a.id ? null : a.id }))
+      }, alarmStyle[a.kind] || alarmStyle.info)),
+      axStr: fmt(T.sensor.accel[0]), ayStr: fmt(T.sensor.accel[1]), azStr: fmt(T.sensor.accel[2]),
+      gxStr: fmt(T.sensor.gyro[0], 4), gyStr: fmt(T.sensor.gyro[1], 4), gzStr: fmt(T.sensor.gyro[2], 4),
+      canRows: (T.can.frames.length ? T.can.frames : [
+        { id: "0x101", label: "accel", bytes: null, pending: true },
+        { id: "0x102", label: "baro", bytes: null, pending: true },
+        { id: "0x103", label: "mag", bytes: null, pending: true }
+      ]).map((f) => {
+        const dec = this.decodeCan(f);
+        return {
+          id: f.id, label: f.label,
+          bytesText: f.pending || !f.bytes ? "— beklemede —" : f.bytes,
+          bytesColor: f.pending || !f.bytes ? "#3a4a56" : "#ffd54f",
+          bytesStyle: f.pending || !f.bytes ? "italic" : "normal",
+          decoded: dec || "—",
+          decColor: dec ? "#d7e6df" : "#3a4a56"
+        };
+      }),
+      mgrsText: this.state.mgrsText,
+      latlonText: this.state.latlonText
+    };
+  }
+}
+</script>
 </body>
 </html>
