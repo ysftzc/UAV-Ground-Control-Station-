@@ -13,12 +13,20 @@ Prerequisites (run in order, each in its own terminal - same as the rest of
 the HITL pipeline, see CLAUDE.md "KOMUTLAR REFERANSI"):
     1. PX4 SITL in HITL mode + tools/hil_bridge.py + MicroXRCEAgent (see
        CLAUDE.md sections on HIL entegrasyonu / ROS2 katmanı).
-    2. This server:
+    2. Gazebo pose-puppet + gimbal camera feed (see CLAUDE.md "Gorsellestirme"):
+       gz sim -r tools/gz_puppet/puppet_world.sdf   (or -s for headless)
+       tools/attitude_to_gazebo.py (only needed to actually move the puppet -
+       the camera publishes frames either way, even at rest)
+       ros2 run ros_gz_image image_bridge <CAMERA_GZ_TOPIC below>
+    3. This server:
        source /opt/ros/jazzy/setup.bash
        source ~/stm32_ws/ros2_ws/install/setup.bash
        tools/gcs_web/.venv/bin/python tools/gcs_web/server.py
 
-Then open http://127.0.0.1:8765/ in a browser.
+Then open http://127.0.0.1:8765/ in a browser. The OSD/camera panel works
+independently of steps 1 - if the video topic isn't bridged the panel just
+shows "SİNYAL YOK", and if the HITL pipeline isn't up the OSD shows LINK LOST
+(both honest, not faked).
 """
 
 import argparse
@@ -29,19 +37,29 @@ import threading
 import time
 from pathlib import Path
 
+import cv2
 import rclpy
 import uvicorn
+from cv_bridge import CvBridge
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pymavlink import mavutil
 from rclpy.node import Node
 from rclpy.qos import (QoSDurabilityPolicy, QoSHistoryPolicy, QoSProfile,
-                        QoSReliabilityPolicy)
+                        QoSReliabilityPolicy, qos_profile_sensor_data)
+from sensor_msgs.msg import Image
 
 from px4_msgs.msg import SensorCombined, VehicleAttitude, VehicleLocalPosition
 
 STATIC_DIR = Path(__file__).parent / "static"
+
+# Gazebo gimbal camera (tools/gz_puppet/puppet_world.sdf's Sensors plugin),
+# bridged to ROS2 by: ros2 run ros_gz_image image_bridge <this topic>
+# (creates a sensor_msgs/Image topic of the same name - see CLAUDE.md).
+CAMERA_TOPIC = "/world/stm32_puppet_world/model/stm32_puppet/link/camera_link/sensor/camera/image"
+VIDEO_FPS = 15
+VIDEO_STALE_S = 2.0
 
 # hil_bridge.py's FAKE_LAT_DEG/FAKE_LON_DEG/FAKE_ALT_M (Eskisehir) - the real,
 # fixed HIL_GPS fix PX4 is actually holding. Not fabricated: this is what the
@@ -159,6 +177,28 @@ class TelemetryState:
         self.task_hwm = {}      # NAMED_VALUE_INT name -> (value, last_seen monotonic time)
         self.heap_free = None
         self.heap_free_t = 0.0
+        self.frame_lock = threading.Lock()
+        self.jpeg_frame = None
+        self.jpeg_frame_t = 0.0
+        self.cv_bridge = CvBridge()
+
+    def on_image(self, msg: Image):
+        try:
+            frame = self.cv_bridge.imgmsg_to_cv2(msg, desired_encoding="bgr8")
+        except Exception:
+            return
+        ok, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 82])
+        if not ok:
+            return
+        with self.frame_lock:
+            self.jpeg_frame = buf.tobytes()
+            self.jpeg_frame_t = time.time()
+
+    def latest_jpeg(self):
+        with self.frame_lock:
+            if self.jpeg_frame is None or (time.time() - self.jpeg_frame_t) > VIDEO_STALE_S:
+                return None
+            return self.jpeg_frame
 
     def on_task_health(self, name: str, value: int):
         with self.lock:
@@ -264,6 +304,7 @@ class TelemetryState:
                     "note": "loopback-only on STM32, re-encoded here from live accel; baro/mag are firmware TODO stubs",
                 },
                 "freertos": self._freertos_snapshot(now),
+                "video": {"available": self.latest_jpeg() is not None, "real": True},
             }
 
     def _freertos_snapshot(self, now):
@@ -308,6 +349,7 @@ class GcsWebNode(Node):
         self.create_subscription(VehicleAttitude, "/fmu/out/vehicle_attitude", state.on_attitude, qos)
         self.create_subscription(SensorCombined, "/fmu/out/sensor_combined", state.on_sensor, qos)
         self.create_subscription(VehicleLocalPosition, "/fmu/out/vehicle_local_position", state.on_local_position, qos)
+        self.create_subscription(Image, CAMERA_TOPIC, state.on_image, qos_profile_sensor_data)
         self.get_logger().info("gcs_web_bridge started, PX4 uXRCE-DDS topiclerini bekliyor...")
 
 
@@ -347,6 +389,21 @@ async def ws_telemetry(ws: WebSocket):
             await asyncio.sleep(1.0 / BROADCAST_HZ)
     except WebSocketDisconnect:
         pass
+
+
+async def _mjpeg_frames():
+    period = 1.0 / VIDEO_FPS
+    boundary = b"--frame\r\nContent-Type: image/jpeg\r\n\r\n"
+    while True:
+        frame = state.latest_jpeg()
+        if frame is not None:
+            yield boundary + frame + b"\r\n"
+        await asyncio.sleep(period)
+
+
+@app.get("/video/stream.mjpg")
+async def video_stream():
+    return StreamingResponse(_mjpeg_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 def main():

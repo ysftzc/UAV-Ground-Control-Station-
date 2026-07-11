@@ -22,6 +22,9 @@
     @keyframes gcsBlink { 0%,49% { opacity:1; } 50%,100% { opacity:0.25; } }
     @keyframes gcsPulse { 0% { box-shadow:0 0 0 0 rgba(0,230,118,0.5); } 70% { box-shadow:0 0 0 7px rgba(0,230,118,0); } 100% { box-shadow:0 0 0 0 rgba(0,230,118,0); } }
     @keyframes gcsAlarmPulse { 0%,100% { background:rgba(255,82,82,0.16); } 50% { background:rgba(255,82,82,0.32); } }
+    @keyframes osdBlink { 0%,49% { opacity:1; } 50%,100% { opacity:0.15; } }
+    @keyframes osdSlowBlink { 0%,60% { opacity:1; } 61%,100% { opacity:0.2; } }
+    @keyframes osdEdgePulse { 0%,100% { box-shadow:inset 0 0 60px 8px rgba(255,59,59,0.28); } 50% { box-shadow:inset 0 0 110px 22px rgba(255,59,59,0.55); } }
     .leaflet-container { background:#0a0c0f !important; font-family:'JetBrains Mono',monospace !important; }
     .leaflet-tile { filter:saturate(0.75) brightness(0.82) contrast(1.05); }
   </style>
@@ -187,35 +190,147 @@
       </div>
     </div>
 
-    <!-- ==== CENTER: MAP ==== -->
-    <div data-screen-label="Taktik Harita" style="position:relative;background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);overflow:hidden;min-height:0">
-      <div ref="{{ mapRef }}" style="position:absolute;inset:0"></div>
-      <div style="position:absolute;top:10px;left:10px;z-index:1000;display:flex;flex-wrap:wrap;gap:6px;max-width:70%">
-        <span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#00e676;border:1px solid rgba(0,230,118,0.45);background:rgba(10,12,15,0.85);border-radius:3px;padding:3px 8px;backdrop-filter:blur(4px)">KONUM: SABİT — GERÇEK HIL_GPS FIX</span>
-        <span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#ffab40;border:1px solid rgba(255,171,64,0.45);background:rgba(10,12,15,0.85);border-radius:3px;padding:3px 8px;backdrop-filter:blur(4px)">WAYPOINT: DEMO</span>
-        <span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#ff5252;border:1px solid rgba(255,82,82,0.45);background:rgba(10,12,15,0.85);border-radius:3px;padding:3px 8px;backdrop-filter:blur(4px)">NFZ: DEMO</span>
-      </div>
-      <div style="position:absolute;top:10px;right:10px;z-index:1000;display:flex;flex-direction:column;gap:6px;align-items:flex-end">
-        <div style="background:rgba(10,12,15,0.85);border:1px solid #1c2733;border-radius:4px;padding:5px 10px;backdrop-filter:blur(4px)">
-          <span style="font-size:9px;letter-spacing:1.5px;color:#6b7c86">HDG </span>
-          <span style="font-size:13px;font-weight:800;color:#00e676;font-variant-numeric:tabular-nums">{{ hdgStr }}°</span>
+    <!-- ==== CENTER: MAP / KAMERA ==== -->
+    <div data-screen-label="Taktik Harita / Kamera" style="position:relative;background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);overflow:hidden;min-height:0">
+      <div ref="{{ mapRef }}" style="position:absolute;inset:0;visibility: {{ mapVis }};z-index: {{ mapZ }}"></div>
+
+      <!-- KAMERA + OSD katmanı -->
+      <div style="position:absolute;inset:0;background:#000;z-index: {{ camZ }};visibility: {{ camVis }};overflow:hidden">
+        <sc-if value="{{ videoAvailable }}" hint-placeholder-val="{{ false }}">
+          <img src="/video/stream.mjpg" style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover" />
+        </sc-if>
+        <sc-if value="{{ videoUnavailable }}" hint-placeholder-val="{{ true }}">
+          <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(155deg,#11151a 0%,#0c1013 100%)">
+            <span style="font-size:11px;letter-spacing:3px;color:#3a4a56;border:1px dashed #263646;padding:10px 18px;border-radius:4px">SİNYAL YOK — gimbal kamera köprüsü bağlı değil</span>
+          </div>
+        </sc-if>
+
+        <div style="position:absolute;inset:0;pointer-events:none;color: {{ osdC }};text-shadow: {{ osdGlow }};font-size:12px;line-height:1.35;font-family:'JetBrains Mono',ui-monospace,monospace">
+          <sc-if value="{{ osdLinkLost }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;inset:0;animation:osdEdgePulse 2.4s ease-in-out infinite"></div>
+          </sc-if>
+
+          <div style="position:absolute;top:2%;left:1.4%;width:34px;height:34px;border-top:2px solid {{ osdC }};border-left:2px solid {{ osdC }};opacity:0.85"></div>
+          <div style="position:absolute;top:2%;right:1.4%;width:34px;height:34px;border-top:2px solid {{ osdC }};border-right:2px solid {{ osdC }};opacity:0.85"></div>
+          <div style="position:absolute;bottom:2%;left:1.4%;width:34px;height:34px;border-bottom:2px solid {{ osdC }};border-left:2px solid {{ osdC }};opacity:0.85"></div>
+          <div style="position:absolute;bottom:2%;right:1.4%;width:34px;height:34px;border-bottom:2px solid {{ osdC }};border-right:2px solid {{ osdC }};opacity:0.85"></div>
+
+          <div style="position:absolute;left:50%;top:50%;width:2px;height:22px;margin-left:-1px;margin-top:-11px;background: {{ osdC }};box-shadow: {{ osdBoxGlow }}"></div>
+          <div style="position:absolute;left:50%;top:50%;width:22px;height:2px;margin-left:-11px;margin-top:-1px;background: {{ osdC }};box-shadow: {{ osdBoxGlow }}"></div>
+          <div style="position:absolute;left:50%;top:50%;width:46px;height:46px;margin-left:-23px;margin-top:-23px;border:1px solid {{ osdCDim }};border-radius:50%"></div>
+
+          <div style="position:absolute;left:50%;top:50%;width:46%;height:58%;transform:translate(-50%,-50%);overflow:hidden">
+            <div style="position:absolute;left:-50%;top:-50%;width:200%;height:200%;transform: {{ osdLadderTransform }}">
+              <sc-for list="{{ osdRungs }}" as="rung" hint-placeholder-count="6">
+                <div style="position:absolute;left:50%;top: {{ rung.top }};width: {{ rung.w }};transform:translateX(-50%);display:flex;align-items:center;gap:8px">
+                  <span style="font-size:10px;width:24px;text-align:right;font-variant-numeric:tabular-nums;opacity:0.9">{{ rung.label }}</span>
+                  <span style="flex:1;border-top: {{ rung.line }};opacity:0.85"></span>
+                  <span style="width:14%"></span>
+                  <span style="flex:1;border-top: {{ rung.line }};opacity:0.85"></span>
+                  <span style="font-size:10px;width:24px;font-variant-numeric:tabular-nums;opacity:0.9">{{ rung.label }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="position:absolute;top:2.2%;left:50%;transform:translateX(-50%);width:38%;min-width:220px">
+            <div style="position:relative;height:30px;overflow:hidden;border-bottom:1px solid {{ osdCDim }}">
+              <sc-for list="{{ osdHdgTicks }}" as="htick" hint-placeholder-count="9">
+                <div style="position:absolute;bottom:0;left: {{ htick.left }};transform:translateX(-50%);display:flex;flex-direction:column;align-items:center;gap:2px">
+                  <span style="font-size:10px;font-weight:700;letter-spacing:1px">{{ htick.label }}</span>
+                  <span style="width:1px;background: {{ osdC }};height: {{ htick.h }};opacity:0.8"></span>
+                </div>
+              </sc-for>
+            </div>
+            <div style="display:flex;justify-content:center;margin-top:2px">
+              <div style="display:flex;flex-direction:column;align-items:center">
+                <div style="width:0;height:0;border-left:5px solid transparent;border-right:5px solid transparent;border-bottom:6px solid {{ osdC }};margin-top:-36px"></div>
+                <div style="margin-top:32px;font-size:13px;font-weight:800;letter-spacing:1px;border:1px solid {{ osdCDim }};padding:1px 8px;font-variant-numeric:tabular-nums;background:rgba(0,0,0,0.25)">{{ osdHdgStr }}</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="position:absolute;top:2.2%;left:4%;display:flex;flex-direction:column;gap:3px;font-size:12px">
+            <div style="display:flex;gap:8px"><span style="opacity:0.6;width:44px">MGRS</span><span style="font-weight:700;letter-spacing:0.5px">{{ osdMgrsStr }}</span></div>
+            <div style="display:flex;gap:8px;font-variant-numeric:tabular-nums"><span style="opacity:0.6;width:44px">LAT</span><span style="font-weight:700">{{ osdLatStr }}</span></div>
+            <div style="display:flex;gap:8px;font-variant-numeric:tabular-nums"><span style="opacity:0.6;width:44px">LON</span><span style="font-weight:700">{{ osdLonStr }}</span></div>
+            <div style="display:flex;gap:8px;font-variant-numeric:tabular-nums"><span style="opacity:0.6;width:44px">ALT</span><span style="font-weight:700">{{ osdAltStr }}</span></div>
+          </div>
+
+          <div style="position:absolute;top:2.2%;right:4%;display:flex;flex-direction:column;align-items:flex-end;gap:4px">
+            <div style="font-size:16px;font-weight:800;letter-spacing:2px;font-variant-numeric:tabular-nums">{{ osdClockStr }}</div>
+            <sc-if value="{{ osdRecording }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;letter-spacing:2px;color:#ff3b3b;text-shadow:0 0 6px rgba(255,59,59,0.7)">
+                <span style="width:9px;height:9px;border-radius:50%;background:#ff3b3b;animation:osdBlink 1.2s step-end infinite"></span>
+                <span>REC</span>
+              </div>
+            </sc-if>
+            <div style="font-size:11px;font-weight:800;letter-spacing:1.5px;border:1px solid {{ osdCDim }};padding:2px 8px;background:rgba(0,0,0,0.25)">{{ osdFlightMode }}</div>
+          </div>
+
+          <div style="position:absolute;bottom:2.2%;left:4%;display:flex;flex-direction:column;gap:6px">
+            <div style="display:flex;align-items:end;gap:2px;height:16px">
+              <sc-for list="{{ osdSigBars }}" as="sbar" hint-placeholder-count="5">
+                <span style="width:5px;height: {{ sbar.h }};background: {{ sbar.bg }};border:1px solid {{ osdCDim }};box-sizing:border-box"></span>
+              </sc-for>
+              <span style="font-size:10px;opacity:0.7;margin-left:6px;align-self:center">LINK {{ osdSigStr }}</span>
+            </div>
+            <div style="font-size:12px;font-weight:800;letter-spacing:2px;animation: {{ osdLinkAnim }}">LINK: {{ osdLinkStr }}</div>
+          </div>
+
+          <div style="position:absolute;bottom:2.2%;right:4%;display:flex;flex-direction:column;align-items:flex-end;gap:3px;font-size:12px;font-variant-numeric:tabular-nums">
+            <div style="display:flex;gap:8px"><span style="opacity:0.6">GMB PIT</span><span style="font-weight:700">{{ osdGimbalPitchStr }}</span></div>
+            <div style="display:flex;gap:8px"><span style="opacity:0.6">GMB YAW</span><span style="font-weight:700">{{ osdGimbalYawStr }}</span></div>
+          </div>
+
+          <div style="position:absolute;bottom:2.2%;left:50%;transform:translateX(-50%);display:flex;gap:8px;align-items:center">
+            <span style="font-size:10px;font-weight:800;letter-spacing:1px;border:1px solid {{ osdSrcBorder }};color: {{ osdSrcColor }};padding:1px 7px;background:rgba(0,0,0,0.25)">{{ osdSrcLabel }}</span>
+            <span style="font-size:11px;font-variant-numeric:tabular-nums;opacity:0.85">SPD: {{ osdSpdStr }}</span>
+            <span style="font-size:11px;font-variant-numeric:tabular-nums;opacity:0.85">ATT: {{ osdAttStr }}</span>
+            <span style="font-size:11px;font-variant-numeric:tabular-nums;opacity:0.85">GPS: {{ osdGpsStr }}</span>
+          </div>
+
+          <sc-if value="{{ osdLinkLost }}" hint-placeholder-val="{{ false }}">
+            <div style="position:absolute;left:50%;top:38%;transform:translate(-50%,-50%);font-size:28px;font-weight:800;letter-spacing:7px;color:#ff3b3b;text-shadow:0 0 18px rgba(255,59,59,0.8);animation:osdSlowBlink 1.6s step-end infinite;border:2px solid rgba(255,59,59,0.6);padding:7px 22px;background:rgba(0,0,0,0.35)">LINK LOST</div>
+          </sc-if>
         </div>
-        <div style="background:rgba(10,12,15,0.85);border:1px solid #1c2733;border-radius:4px;padding:5px 10px;backdrop-filter:blur(4px)">
-          <span style="font-size:9px;letter-spacing:1.5px;color:#6b7c86">ALT </span>
-          <span style="font-size:13px;font-weight:800;color:#d7e6df;font-variant-numeric:tabular-nums">{{ altStr }} m</span>
-        </div>
       </div>
+
+      <!-- Görünüm anahtarı: HARİTA / KAMERA -->
+      <div style="position:absolute;top:10px;left:50%;transform:translateX(-50%);z-index:1002;display:flex;gap:3px;background:rgba(10,12,15,0.85);border:1px solid #1c2733;border-radius:5px;padding:3px;backdrop-filter:blur(4px)">
+        <button onClick="{{ setViewMap }}" style="font-family:inherit;font-size:9px;font-weight:800;letter-spacing:1.5px;color: {{ mapBtnColor }};background: {{ mapBtnBg }};border:none;border-radius:3px;padding:5px 10px;cursor:pointer">HARİTA</button>
+        <button onClick="{{ setViewCam }}" style="font-family:inherit;font-size:9px;font-weight:800;letter-spacing:1.5px;color: {{ camBtnColor }};background: {{ camBtnBg }};border:none;border-radius:3px;padding:5px 10px;cursor:pointer">KAMERA / OSD</button>
+      </div>
+
+      <sc-if value="{{ viewMap }}" hint-placeholder-val="{{ true }}">
+        <div style="position:absolute;top:10px;left:10px;z-index:1000;display:flex;flex-wrap:wrap;gap:6px;max-width:70%">
+          <span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#00e676;border:1px solid rgba(0,230,118,0.45);background:rgba(10,12,15,0.85);border-radius:3px;padding:3px 8px;backdrop-filter:blur(4px)">KONUM: SABİT — GERÇEK HIL_GPS FIX</span>
+          <span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#ffab40;border:1px solid rgba(255,171,64,0.45);background:rgba(10,12,15,0.85);border-radius:3px;padding:3px 8px;backdrop-filter:blur(4px)">WAYPOINT: DEMO</span>
+          <span style="font-size:9px;font-weight:800;letter-spacing:1px;color:#ff5252;border:1px solid rgba(255,82,82,0.45);background:rgba(10,12,15,0.85);border-radius:3px;padding:3px 8px;backdrop-filter:blur(4px)">NFZ: DEMO</span>
+        </div>
+        <div style="position:absolute;top:10px;right:10px;z-index:1000;display:flex;flex-direction:column;gap:6px;align-items:flex-end">
+          <div style="background:rgba(10,12,15,0.85);border:1px solid #1c2733;border-radius:4px;padding:5px 10px;backdrop-filter:blur(4px)">
+            <span style="font-size:9px;letter-spacing:1.5px;color:#6b7c86">HDG </span>
+            <span style="font-size:13px;font-weight:800;color:#00e676;font-variant-numeric:tabular-nums">{{ hdgStr }}°</span>
+          </div>
+          <div style="background:rgba(10,12,15,0.85);border:1px solid #1c2733;border-radius:4px;padding:5px 10px;backdrop-filter:blur(4px)">
+            <span style="font-size:9px;letter-spacing:1.5px;color:#6b7c86">ALT </span>
+            <span style="font-size:13px;font-weight:800;color:#d7e6df;font-variant-numeric:tabular-nums">{{ altStr }} m</span>
+          </div>
+        </div>
+        <div style="position:absolute;left:10px;bottom:10px;z-index:1000;background:rgba(10,12,15,0.88);border:1px solid rgba(0,230,118,0.35);border-radius:4px;padding:7px 11px;backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(0,0,0,0.5)">
+          <div style="font-size:9px;letter-spacing:1.5px;color:#6b7c86;margin-bottom:2px">İMLEÇ · MGRS</div>
+          <div style="font-size:13px;font-weight:700;letter-spacing:1px;color:#00e676;font-variant-numeric:tabular-nums">{{ mgrsText }}</div>
+          <div style="font-size:9px;color:#6b7c86;font-variant-numeric:tabular-nums;margin-top:1px">{{ latlonText }}</div>
+        </div>
+      </sc-if>
+
       <sc-if value="{{ stale }}" hint-placeholder-val="{{ false }}">
         <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);z-index:1001;background:rgba(10,12,15,0.92);border:1px solid rgba(255,82,82,0.7);border-radius:4px;padding:10px 18px;text-align:center;animation:gcsAlarmPulse 1.2s infinite">
           <div style="font-size:14px;font-weight:800;letter-spacing:3px;color:#ff5252">VERİ BAYAT</div>
           <div style="font-size:9px;color:#ff8a80;letter-spacing:1px;margin-top:2px">SON GEÇERLİ DEĞERLER GÖSTERİLİYOR — {{ ageStr }}</div>
         </div>
       </sc-if>
-      <div style="position:absolute;left:10px;bottom:10px;z-index:1000;background:rgba(10,12,15,0.88);border:1px solid rgba(0,230,118,0.35);border-radius:4px;padding:7px 11px;backdrop-filter:blur(4px);box-shadow:0 2px 8px rgba(0,0,0,0.5)">
-        <div style="font-size:9px;letter-spacing:1.5px;color:#6b7c86;margin-bottom:2px">İMLEÇ · MGRS</div>
-        <div style="font-size:13px;font-weight:700;letter-spacing:1px;color:#00e676;font-variant-numeric:tabular-nums">{{ mgrsText }}</div>
-        <div style="font-size:9px;color:#6b7c86;font-variant-numeric:tabular-nums;margin-top:1px">{{ latlonText }}</div>
-      </div>
     </div>
 
     <!-- ==== RIGHT COLUMN ==== -->
@@ -438,7 +553,8 @@ class Component extends DCLogic {
     ageMs: 66,
     jitterMs: 0,
     recording: false,
-    recCount: 0
+    recCount: 0,
+    view: "map"
   };
 
   componentDidMount() {
@@ -545,7 +661,8 @@ class Component extends DCLogic {
         { id: "0x102", label: "baro", bytes: null, pending: true },
         { id: "0x103", label: "mag", bytes: null, pending: true }
       ] },
-      freertos: { available: false, reason: "no wire path from WDG_Task to PC" }
+      freertos: { available: false, reason: "no wire path from WDG_Task to PC" },
+      video: { available: false }
     };
   }
 
@@ -852,7 +969,8 @@ class Component extends DCLogic {
       position: { lat: 39.7767, lon: 30.5206, alt: 800, heading: 0 },
       battery: { voltage: 11.1, percent: 76 },
       can: { frames: [] },
-      freertos: { available: false, reason: "no wire path from WDG_Task to PC" }
+      freertos: { available: false, reason: "no wire path from WDG_Task to PC" },
+      video: { available: false }
     };
     const feed = this.state.feed;
     const fmt = (v, d) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d == null ? 2 : d);
@@ -893,6 +1011,62 @@ class Component extends DCLogic {
     }[feed];
 
     const schemaOk = T.schema_ver && parseInt(T.schema_ver) === 1;
+
+    // ===== OSD (kamera overlay) hesaplamalari - gercek attitude/konum/link
+    // verisiyle besleniyor, gimbal/hiz/zoom icin gercek kanal yok -> "-"/N/A =====
+    const view = this.state.view;
+    const osdLinkLost = !linkOk;
+    const osdC = linkOk ? "#00e676" : "#ff3b3b";
+    const osdCDim = linkOk ? "rgba(0,230,118,0.45)" : "rgba(255,59,59,0.45)";
+    const osdGlowRgb = linkOk ? "0,230,118" : "255,59,59";
+    const osdGlow = `0 0 6px rgba(${osdGlowRgb},0.55)`;
+    const osdBoxGlow = `0 0 6px rgba(${osdGlowRgb},0.7)`;
+
+    const oRoll = T.attitude.roll, oPitch = T.attitude.pitch;
+    const osdLadderTransform = `rotate(${-oRoll}deg) translateY(${(oPitch * 0.7).toFixed(2)}%)`;
+    const osdRungs = [];
+    for (let d = 30; d >= -30; d -= 10) {
+      const solid = d >= 0;
+      osdRungs.push({
+        top: `calc(50% + ${(-d * 0.7).toFixed(2)}%)`,
+        w: d === 0 ? "86%" : "52%",
+        label: d === 0 ? "" : String(Math.abs(d)),
+        line: (d === 0 ? "2px" : "1.5px") + (solid ? " solid " : " dashed ") + osdC
+      });
+    }
+
+    const oYaw = ((T.attitude.yaw % 360) + 360) % 360;
+    const osdHdgTicks = [];
+    {
+      const names = { 0: "N", 45: "NE", 90: "E", 135: "SE", 180: "S", 225: "SW", 270: "W", 315: "NW" };
+      const start = Math.ceil((oYaw - 45) / 5) * 5;
+      for (let d = start; d <= oYaw + 45; d += 5) {
+        const dd = ((d % 360) + 360) % 360;
+        const major = dd % 15 === 0;
+        osdHdgTicks.push({
+          left: (50 + (d - oYaw) * 1.05).toFixed(2) + "%",
+          h: major ? "8px" : "4px",
+          label: major ? (names[dd] !== undefined ? names[dd] : String(dd).padStart(3, "0")) : ""
+        });
+      }
+    }
+    const osdHdgStr = String(Math.round(oYaw)).padStart(3, "0") + "°";
+
+    let osdMgrsStr = "—";
+    try {
+      if (window.mgrs) {
+        const m = window.mgrs.forward([T.position.lon, T.position.lat], 5);
+        osdMgrsStr = m.replace(/^(\d+[A-Z])([A-Z]{2})(\d{5})(\d{5})$/, "$1 $2 $3 $4");
+      }
+    } catch (e) {}
+
+    const osdSigLevel = waiting ? null : (linkOk ? (this.state.ageMs < 100 ? 5 : this.state.ageMs < 300 ? 4 : this.state.ageMs < 700 ? 3 : 2) : 0);
+    const osdSigBars = [0, 1, 2, 3, 4].map((i) => ({
+      h: (5 + i * 2.5) + "px",
+      bg: osdSigLevel !== null && i < osdSigLevel ? osdC : "transparent"
+    }));
+
+    const videoAvailable = !!(T.video && T.video.available);
 
     return {
       mapRef: this.mapRef, accelRef: this.accelRef, gyroRef: this.gyroRef, attRef: this.attRef,
@@ -971,7 +1145,45 @@ class Component extends DCLogic {
         };
       }),
       mgrsText: this.state.mgrsText,
-      latlonText: this.state.latlonText
+      latlonText: this.state.latlonText,
+
+      // ---- Görünüm anahtarı (HARİTA / KAMERA) ----
+      viewMap: view !== "camera",
+      mapZ: view === "camera" ? 0 : 1,
+      mapVis: view === "camera" ? "hidden" : "visible",
+      camZ: view === "camera" ? 1 : 0,
+      camVis: view === "camera" ? "visible" : "hidden",
+      setViewMap: () => this.setState({ view: "map" }),
+      setViewCam: () => this.setState({ view: "camera" }),
+      mapBtnColor: view === "camera" ? "#6b7c86" : "#00e676",
+      mapBtnBg: view === "camera" ? "transparent" : "rgba(0,230,118,0.12)",
+      camBtnColor: view === "camera" ? "#00e676" : "#6b7c86",
+      camBtnBg: view === "camera" ? "rgba(0,230,118,0.12)" : "transparent",
+
+      // ---- OSD / kamera overlay ----
+      videoAvailable, videoUnavailable: !videoAvailable,
+      osdC, osdCDim, osdGlow, osdBoxGlow, osdLinkLost,
+      osdLadderTransform, osdRungs,
+      osdHdgTicks, osdHdgStr,
+      osdMgrsStr,
+      osdLatStr: T.position.lat.toFixed(5) + "°",
+      osdLonStr: T.position.lon.toFixed(5) + "°",
+      osdAltStr: alt.toFixed(0) + " m",
+      osdClockStr: utcStr + " Z",
+      osdRecording: this.state.recording,
+      osdFlightMode: T.mode,
+      osdSigBars,
+      osdSigStr: osdSigLevel !== null ? osdSigLevel + "/5" : "N/A",
+      osdLinkStr: linkOk ? "OK" : "LOST",
+      osdLinkAnim: linkOk ? "none" : "osdBlink 1s step-end infinite",
+      osdGimbalPitchStr: "—",
+      osdGimbalYawStr: "—",
+      osdSrcLabel: "GERÇEK",
+      osdSrcColor: osdC,
+      osdSrcBorder: osdCDim,
+      osdSpdStr: "N/A",
+      osdAttStr: "R" + fmt(oRoll, 1) + "° P" + fmt(oPitch, 1) + "°",
+      osdGpsStr: "3D FIX"
     };
   }
 }
