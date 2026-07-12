@@ -41,7 +41,7 @@ import cv2
 import rclpy
 import uvicorn
 from cv_bridge import CvBridge
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import Body, FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pymavlink import mavutil
@@ -90,6 +90,26 @@ HOME_ALT_M = 800.0
 LINK_TIMEOUT_S = 2.0
 ANOMALY_THRESHOLD_DEG = 20.0
 BROADCAST_HZ = 15
+
+# PX4's "Normal mode" GCS MAVLink link (see CLAUDE.md's "No connection to the
+# GCS" TUZAK) - the same port a real ground control station would connect a
+# real vehicle's telemetry radio to. The mission planner uses this for a
+# genuine MISSION_ITEM_INT upload, not a demo overlay - see MissionBridge.
+#
+# udpout (not udpin): PX4 only starts sending to a partner address once it
+# has RECEIVED a packet from it (MAV_BROADCAST is off by default - see the
+# "MAVLink only on localhost" log line), so we must connect out first: PX4
+# then learns our (ephemeral) source port from our own heartbeat and starts
+# replying to exactly that. Confirmed empirically (isolated pymavlink probe
+# receiving real ATTITUDE/GPS_RAW_INT/etc within ~1s) that this works fine
+# ONCE PX4 has actually finished booting its mavlink module - PX4's HITL
+# rcS boot script blocks entirely until the first HIL_SENSOR arrives (see
+# CLAUDE.md's lockstep TUZAK), so this link isn't live until hil_bridge.py
+# is already running and PX4 has connected to it.
+MAVLINK_GCS_URL = "udpout:127.0.0.1:18570"
+PX4_SYSID = 1
+PX4_COMPID = 1  # MAV_COMP_ID_AUTOPILOT1 - PX4 SITL/HITL default
+MISSION_ACK_TIMEOUT_S = 5.0
 
 # hil_bridge.py relays the STM32's real NAMED_VALUE_INT task-health telemetry
 # (see MAVLink_SendTaskHealth, Core/Src/mavlink_bridge.c) here over local UDP.
@@ -356,6 +376,134 @@ class TelemetryState:
         }
 
 
+class MissionBridge:
+    """Real MAVLink mission upload to PX4's GCS link (127.0.0.1:18570), using
+    the standard MISSION_COUNT / MISSION_REQUEST_INT / MISSION_ITEM_INT /
+    MISSION_ACK handshake - the identical protocol a real GCS speaks to real
+    autopilot hardware, and PX4 doesn't distinguish HITL from a physical
+    vehicle here. This is why the dashboard's mission panel can honestly
+    drop the "DEMO" label the map's illustrative waypoint route still
+    carries - contrast with the ARM/DISARM/HOLD/RTL buttons in index.html,
+    which stay intentionally unwired (demoCmd()) since arming isn't in
+    scope here.
+
+    One long-lived connection is opened at startup and reused for the life
+    of the process - CLAUDE.md documents the GCS link as "yapışkan" (PX4
+    can be slow/inconsistent accepting a *new* short-lived connection), so
+    reconnecting per-request would be fragile.
+    """
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.master = mavutil.mavlink_connection(
+            MAVLINK_GCS_URL, source_system=255, source_component=190)
+        self.connected = False
+        self.last_ack = None       # "ACCEPTED" | "CLEARED" | "<error text>" | None
+        self.px4_wp_count = None   # count PX4 last ACKed (from our own upload/clear, not a separate read-back)
+        self.uploading = False
+        self.waypoints = []        # last successfully uploaded [{lat, lon, alt}, ...]
+
+    def status(self):
+        with self.lock:
+            return {
+                "connected": self.connected,
+                "uploading": self.uploading,
+                "last_ack": self.last_ack,
+                "px4_wp_count": self.px4_wp_count,
+                "waypoints": self.waypoints,
+            }
+
+    def run_heartbeat_loop(self):
+        """Background thread: sends our own HEARTBEAT (MAV_TYPE_GCS) at ~3Hz -
+        PX4 expects to see one from a GCS link (see CLAUDE.md's arm-test
+        TUZAK), and only starts replying to OUR address once it has received
+        at least one packet from us (MAV_BROADCAST is off by default - see
+        CLAUDE.md's "connected" TUZAK). Deliberately does NOT poll mission
+        count on a timer - PX4's waypoint manager (WPM) is a strict single-
+        transaction state machine, and a MISSION_REQUEST_LIST outside of an
+        upload/clear call left it stuck reporting "WPM: IGN ...: Busy" (see
+        CLAUDE.md TUZAK). px4_wp_count only ever comes from our own
+        upload()/clear() ACKs."""
+        while True:
+            with self.lock:
+                if not self.uploading:
+                    try:
+                        self.master.mav.heartbeat_send(
+                            mavutil.mavlink.MAV_TYPE_GCS,
+                            mavutil.mavlink.MAV_AUTOPILOT_INVALID, 0, 0, 0)
+                        hb = self.master.recv_match(type="HEARTBEAT", blocking=False)
+                        if hb is not None:
+                            self.connected = True
+                    except Exception:
+                        pass
+            time.sleep(0.3)
+
+    def upload(self, waypoints):
+        """waypoints: [{"lat":.., "lon":.., "alt":..}, ...]. Blocking - call
+        via asyncio.to_thread from the FastAPI handler, never from the event
+        loop directly."""
+        with self.lock:
+            self.uploading = True
+            try:
+                self.master.mav.mission_count_send(PX4_SYSID, PX4_COMPID, len(waypoints), 0)
+                for _ in range(len(waypoints)):
+                    req = self.master.recv_match(
+                        type=["MISSION_REQUEST_INT", "MISSION_REQUEST"],
+                        blocking=True, timeout=MISSION_ACK_TIMEOUT_S)
+                    if req is None:
+                        self.last_ack = "TIMEOUT (MISSION_REQUEST alınamadı)"
+                        return False
+                    wp = waypoints[req.seq]
+                    self.master.mav.mission_item_int_send(
+                        PX4_SYSID, PX4_COMPID, req.seq,
+                        mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+                        mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                        0, 1,
+                        0, 0, 0, 0,
+                        int(round(wp["lat"] * 1e7)), int(round(wp["lon"] * 1e7)), float(wp["alt"]),
+                        0)
+                ack = self.master.recv_match(type="MISSION_ACK", blocking=True, timeout=MISSION_ACK_TIMEOUT_S)
+                if ack is None:
+                    self.last_ack = "TIMEOUT (MISSION_ACK alınamadı)"
+                    return False
+                if ack.type == mavutil.mavlink.MAV_MISSION_ACCEPTED:
+                    self.last_ack = "ACCEPTED"
+                    self.waypoints = waypoints
+                    # PX4's own ACK already confirms exactly this count was
+                    # stored - a follow-up MISSION_REQUEST_LIST read-back is
+                    # NOT queried here on purpose: it left PX4's waypoint
+                    # manager (WPM) stuck reporting later commands "Busy"
+                    # (see CLAUDE.md TUZAK) since WPM is a strict single-
+                    # transaction state machine.
+                    self.px4_wp_count = len(waypoints)
+                    return True
+                self.last_ack = f"REJECTED (type={ack.type})"
+                return False
+            except Exception as e:
+                self.last_ack = f"ERROR: {e}"
+                return False
+            finally:
+                self.uploading = False
+
+    def clear(self):
+        with self.lock:
+            self.uploading = True
+            try:
+                self.master.mav.mission_clear_all_send(PX4_SYSID, PX4_COMPID, 0)
+                ack = self.master.recv_match(type="MISSION_ACK", blocking=True, timeout=MISSION_ACK_TIMEOUT_S)
+                ok = ack is not None and ack.type == mavutil.mavlink.MAV_MISSION_ACCEPTED
+                self.last_ack = "CLEARED" if ok else "CLEAR TIMEOUT/REJECTED"
+                if ok:
+                    self.waypoints = []
+                    self.px4_wp_count = 0
+                return ok
+            except Exception as e:
+                self.last_ack = f"ERROR: {e}"
+                return False
+            finally:
+                self.uploading = False
+
+
 class GcsWebNode(Node):
     def __init__(self, state: TelemetryState):
         super().__init__("gcs_web_bridge")
@@ -392,6 +540,7 @@ def run_task_health_listener(state: TelemetryState, port: int):
 app = FastAPI()
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 state = TelemetryState()
+mission_bridge = MissionBridge()
 
 
 @app.get("/")
@@ -406,10 +555,27 @@ async def ws_telemetry(ws: WebSocket):
     await ws.accept()
     try:
         while True:
-            await ws.send_json(state.snapshot())
+            payload = state.snapshot()
+            payload["mission"] = mission_bridge.status()
+            await ws.send_json(payload)
             await asyncio.sleep(1.0 / BROADCAST_HZ)
     except WebSocketDisconnect:
         pass
+
+
+@app.post("/api/mission/upload")
+async def mission_upload(payload: dict = Body(...)):
+    waypoints = payload.get("waypoints") or []
+    if not waypoints:
+        return {"ok": False, "error": "waypoint listesi boş"}
+    ok = await asyncio.to_thread(mission_bridge.upload, waypoints)
+    return {"ok": ok, "status": mission_bridge.status()}
+
+
+@app.post("/api/mission/clear")
+async def mission_clear():
+    ok = await asyncio.to_thread(mission_bridge.clear)
+    return {"ok": ok, "status": mission_bridge.status()}
 
 
 async def _mjpeg_frames():
@@ -441,6 +607,9 @@ def main():
     health_thread = threading.Thread(
         target=run_task_health_listener, args=(state, TASK_HEALTH_UDP_PORT), daemon=True)
     health_thread.start()
+
+    mission_thread = threading.Thread(target=mission_bridge.run_heartbeat_loop, daemon=True)
+    mission_thread.start()
 
     print(f"[*] GCS dashboard: http://{args.host}:{args.port}/")
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")

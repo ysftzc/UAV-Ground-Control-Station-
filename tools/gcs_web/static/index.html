@@ -387,6 +387,32 @@
         </div>
       </div>
 
+      <!-- MISSION PLANNER -->
+      <div data-screen-label="Misyon Planlayıcı" style="flex:none;background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);overflow:hidden">
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #1c2733">
+          <span style="font-size:11px;font-weight:700;letter-spacing:2px;color:#6b7c86">MİSYON PLANLAYICI</span>
+          <span style="font-size:9px;font-weight:800;letter-spacing:1.2px;color: {{ missionUplinkColor }};border:1px solid {{ missionUplinkBorder }};background: {{ missionUplinkBg }};border-radius:3px;padding:2px 7px">{{ missionUplinkLabel }}</span>
+        </div>
+        <div style="padding:10px 12px;display:flex;flex-direction:column;gap:8px">
+          <div style="font-size:9px;line-height:1.5;color:#6b7c86">Haritada tıklayarak waypoint ekle — PX4'e gerçek MAVLink MISSION_ITEM_INT protokolüyle yüklenir (aynı protokol gerçek donanımda da kullanılır).</div>
+          <button onClick="{{ toggleMissionMode }}" style="font-family:inherit;font-size:10px;font-weight:800;letter-spacing:1px;color: {{ missionModeColor }};background: {{ missionModeBg }};border:1px solid {{ missionModeBorder }};border-radius:4px;padding:8px 4px;cursor:pointer">{{ missionModeLabel }}</button>
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <div style="display:flex;align-items:center;gap:6px">
+              <span style="font-size:9px;letter-spacing:1px;color:#6b7c86">İRTİFA (AGL)</span>
+              <button onClick="{{ missionAltDown }}" style="font-family:inherit;font-size:11px;font-weight:800;color:#d7e6df;background:#0a0e13;border:1px solid #1c2733;border-radius:3px;padding:2px 8px;cursor:pointer">−</button>
+              <span style="font-size:12px;font-weight:800;color:#00e5ff;font-variant-numeric:tabular-nums">{{ missionAltStr }} m</span>
+              <button onClick="{{ missionAltUp }}" style="font-family:inherit;font-size:11px;font-weight:800;color:#d7e6df;background:#0a0e13;border:1px solid #1c2733;border-radius:3px;padding:2px 8px;cursor:pointer">+</button>
+            </div>
+            <span style="font-size:9px;letter-spacing:1px;color:#6b7c86">{{ missionWpCount }} WP</span>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+            <button onClick="{{ uploadMission }}" disabled="{{ missionUploadDisabled }}" style="font-family:inherit;font-size:10px;font-weight:800;letter-spacing:1px;color:#00e5ff;background:rgba(0,229,255,0.08);border:1px solid rgba(0,229,255,0.45);border-radius:4px;padding:9px 4px;cursor:pointer">PX4'E YÜKLE</button>
+            <button onClick="{{ clearMissionWps }}" style="font-family:inherit;font-size:10px;font-weight:800;letter-spacing:1px;color:#d7e6df;background:#0a0e13;border:1px solid #1c2733;border-radius:4px;padding:9px 4px;cursor:pointer" style-hover="border-color:#2c3d4d">TEMİZLE</button>
+          </div>
+          <div style="font-size:9px;line-height:1.5;color:#6b7c86;border-left:2px solid rgba(0,229,255,0.4);padding-left:8px">{{ missionStatusText }}</div>
+        </div>
+      </div>
+
       <!-- GPS + BATTERY -->
       <div data-screen-label="GPS ve Batarya" style="flex:none;background:#0f1319;border:1px solid #1c2733;border-radius:6px;box-shadow:0 2px 10px rgba(0,0,0,0.45);overflow:hidden">
         <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;border-bottom:1px solid #1c2733">
@@ -591,7 +617,15 @@ class Component extends DCLogic {
     recCount: 0,
     view: "map",
     cesiumStatus: "idle",  // idle | loading | ready | no-token | error
-    cesiumCameraMode: "chase"  // chase (360 derece disardan, varsayilan) | pov
+    cesiumCameraMode: "chase",  // chase (360 derece disardan, varsayilan) | pov
+
+    // Misyon planlayıcı: haritaya tıklayarak eklenen waypoint'ler PX4'e
+    // GERÇEK MISSION_ITEM_INT protokolüyle yüklenir (server.py'deki
+    // MissionBridge) - bkz. renderVals() içindeki uploadMission/clearMissionWps.
+    missionMode: false,
+    missionWaypoints: [],   // [{lat, lon, alt}, ...] - henüz yüklenmemiş, yerel taslak
+    missionAlt: 50,         // AGL metre, tüm yeni waypoint'lere uygulanır
+    missionUploadState: "idle"  // idle | uploading | error (yerel fetch durumu; PX4 tarafı için T.mission kullanılır)
   };
 
   componentDidMount() {
@@ -851,7 +885,8 @@ class Component extends DCLogic {
         { id: "0x103", label: "mag", bytes: null, pending: true }
       ] },
       freertos: { available: false, reason: "no wire path from WDG_Task to PC" },
-      video: { available: false }
+      video: { available: false },
+      mission: { connected: false, uploading: false, last_ack: null, px4_wp_count: null, waypoints: [] }
     };
   }
 
@@ -1070,6 +1105,15 @@ class Component extends DCLogic {
 
     this.fov = L.polygon([], { color: "#00e676", weight: 1, opacity: 0.5, fillColor: "#00e676", fillOpacity: 0.13 }).addTo(map);
 
+    // Misyon planlayıcı taslak katmanı (mavi/cyan - DEMO turuncu rotadan
+    // kasıtlı olarak farklı renk, gerçek yüklenecek görevle karışmasın).
+    this.missionGroup = L.layerGroup().addTo(map);
+
+    map.on("click", (e) => {
+      if (!this.state.missionMode) return;
+      this.addMissionWaypoint(e.latlng);
+    });
+
     const icon = L.divIcon({
       className: "",
       iconSize: [30, 30],
@@ -1135,6 +1179,55 @@ class Component extends DCLogic {
     this.fov.setLatLngs(pts);
   }
 
+  redrawMission() {
+    if (!this.map || !window.L || !this.missionGroup) return;
+    const L = window.L;
+    this.missionGroup.clearLayers();
+    const wps = this.state.missionWaypoints;
+    if (wps.length > 1) {
+      L.polyline(wps.map((w) => [w.lat, w.lon]), { color: "#00e5ff", weight: 2, opacity: 0.85 }).addTo(this.missionGroup);
+    }
+    wps.forEach((w, i) => {
+      L.circleMarker([w.lat, w.lon], { radius: 6, color: "#00e5ff", weight: 2, fillColor: "#0a0c0f", fillOpacity: 1 })
+        .addTo(this.missionGroup)
+        .bindTooltip("WP" + (i + 1) + " · " + w.alt.toFixed(0) + "m AGL", { direction: "top", opacity: 0.9 });
+    });
+  }
+
+  addMissionWaypoint(latlng) {
+    const wp = { lat: latlng.lat, lon: latlng.lng, alt: this.state.missionAlt };
+    this.setState((s) => ({ missionWaypoints: s.missionWaypoints.concat([wp]) }), () => this.redrawMission());
+  }
+
+  clearMissionWps() {
+    this.setState({ missionWaypoints: [] }, () => this.redrawMission());
+    fetch("/api/mission/clear", { method: "POST" }).catch(() => {});
+  }
+
+  async uploadMission() {
+    const wps = this.state.missionWaypoints;
+    if (!wps.length) return;
+    this.setState({ missionUploadState: "uploading" });
+    try {
+      const res = await fetch("/api/mission/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ waypoints: wps })
+      });
+      const data = await res.json();
+      if (data.ok) {
+        this.setState({ missionUploadState: "idle" });
+        this.pushAlarm("MİSYON PX4'E YÜKLENDİ — " + wps.length + " waypoint, MAVLink MISSION_ACK: ACCEPTED", "info");
+      } else {
+        this.setState({ missionUploadState: "error" });
+        this.pushAlarm("MİSYON YÜKLEME REDDEDİLDİ — " + ((data.status && data.status.last_ack) || data.error || "bilinmeyen hata"), "alarm");
+      }
+    } catch (e) {
+      this.setState({ missionUploadState: "error" });
+      this.pushAlarm("MİSYON YÜKLEME HATASI — sunucuya ulaşılamadı: " + e.message, "alarm");
+    }
+  }
+
   decodeCan(f) {
     if (f.pending || !f.bytes) return null;
     try {
@@ -1160,7 +1253,8 @@ class Component extends DCLogic {
       battery: { voltage: 11.1, percent: 76 },
       can: { frames: [] },
       freertos: { available: false, reason: "no wire path from WDG_Task to PC" },
-      video: { available: false }
+      video: { available: false },
+      mission: { connected: false, uploading: false, last_ack: null, px4_wp_count: null, waypoints: [] }
     };
     const feed = this.state.feed;
     const fmt = (v, d) => (v >= 0 ? "+" : "−") + Math.abs(v).toFixed(d == null ? 2 : d);
@@ -1301,6 +1395,33 @@ class Component extends DCLogic {
       cmdDisarm: () => this.demoCmd("DISARM"),
       cmdHold: () => this.demoCmd("HOLD"),
       cmdRtl: () => this.demoCmd("RTL"),
+
+      // ---- Misyon planlayıcı (gerçek MAVLink MISSION_ITEM_INT uplink) ----
+      missionModeOn: this.state.missionMode,
+      toggleMissionMode: () => this.setState({ missionMode: !this.state.missionMode }),
+      missionModeLabel: this.state.missionMode ? "HARİTAYA TIKLA: AKTİF" : "HARİTAYA TIKLA: KAPALI",
+      missionModeColor: this.state.missionMode ? "#00e5ff" : "#6b7c86",
+      missionModeBg: this.state.missionMode ? "rgba(0,229,255,0.10)" : "#0a0e13",
+      missionModeBorder: this.state.missionMode ? "rgba(0,229,255,0.5)" : "#1c2733",
+      missionAltStr: String(this.state.missionAlt),
+      missionAltDown: () => this.setState((s) => ({ missionAlt: Math.max(10, s.missionAlt - 10) })),
+      missionAltUp: () => this.setState((s) => ({ missionAlt: Math.min(500, s.missionAlt + 10) })),
+      missionWpCount: this.state.missionWaypoints.length,
+      uploadMission: () => this.uploadMission(),
+      clearMissionWps: () => this.clearMissionWps(),
+      missionUploadDisabled: this.state.missionWaypoints.length === 0 || this.state.missionUploadState === "uploading" || !!(T.mission && T.mission.uploading),
+      missionUplinkColor: T.mission && T.mission.connected ? "#00e676" : "#ff5252",
+      missionUplinkBorder: T.mission && T.mission.connected ? "rgba(0,230,118,0.45)" : "rgba(255,82,82,0.45)",
+      missionUplinkBg: T.mission && T.mission.connected ? "rgba(0,230,118,0.09)" : "rgba(255,82,82,0.09)",
+      missionUplinkLabel: T.mission && T.mission.connected ? "● GERÇEK MAVLINK — BAĞLI" : "● MAVLINK BAĞLANTISI BEKLENİYOR",
+      missionStatusText: (() => {
+        const m = T.mission || {};
+        if (this.state.missionUploadState === "uploading" || m.uploading) return "PX4'E YÜKLENİYOR (MISSION_ITEM_INT) …";
+        if (m.last_ack === "ACCEPTED") return "PX4 DOĞRULADI — " + (m.px4_wp_count != null ? m.px4_wp_count : "?") + " waypoint kabul edildi (MISSION_ACK)";
+        if (m.last_ack === "CLEARED") return "PX4 misyonu temizlendi";
+        if (m.last_ack) return "PX4 REDDETTİ / HATA — " + m.last_ack;
+        return "Henüz yükleme yapılmadı — haritaya tıklayarak waypoint ekle";
+      })(),
       rtosAvailable: !!T.freertos.available,
       rtosOffline: !T.freertos.available,
       rtosTasks: (T.freertos.tasks || []).map((t) => ({
