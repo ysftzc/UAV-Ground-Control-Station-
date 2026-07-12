@@ -663,6 +663,7 @@ class Component extends DCLogic {
 
   componentWillUnmount() {
     clearInterval(this.timer);
+    clearTimeout(this.cesiumResettleTimer);
     if (this.ws) { try { this.ws.close(); } catch (e) {} }
     if (this.map) { this.map.remove(); this.map = null; }
     if (this.cesiumViewer) { try { this.cesiumViewer.destroy(); } catch (e) {} this.cesiumViewer = null; }
@@ -736,6 +737,19 @@ class Component extends DCLogic {
         this.updateCesiumScene(this.state.tele);
         if (this.state.cesiumCameraMode === "chase") this.engageChaseCamera();
       }
+      // TUZAK: bu ilk lookAt çağrısı, WorldTerrain'in bu TAM konum için henüz
+      // hiç istenmemiş yüksek-detay karolarını indirmesinden ÖNCE çalışıyor -
+      // o an sahne hâlâ kaba/varsayılan (ellipsoid'e yakın) bir yükseklik
+      // tahmini kullanıyor. Gerçek karo yüklenince zemin yüksekliği aniden
+      // değişebiliyor (özellikle bina/ağaç dokusu olan bir yerde) ve kamera
+      // gerçek zeminin ALTINDA kalıp ekran simsiyah/yıldızlı görünebiliyor
+      // (bkz. engageChaseCamera() içindeki range=120 TUZAK notu - o tek
+      // başına yetmedi, kamerayı bir kez daha, karolar oturduktan SONRA
+      // konumlandırmak gerekti). Kullanıcı bu sırada POV'a geçmiş olabilir,
+      // o yüzden hâlâ "chase" modundaysak diye tekrar kontrol ediyoruz.
+      this.cesiumResettleTimer = setTimeout(() => {
+        if (this.cesiumViewer && this.state.cesiumCameraMode === "chase") this.engageChaseCamera();
+      }, 2500);
     } catch (e) {
       this.cesiumViewer = null;
       this.setState({ cesiumStatus: "error" });
@@ -815,7 +829,18 @@ class Component extends DCLogic {
     try {
       const center = this.droneBodyEntity.position.getValue(v.clock.currentTime);
       if (!center) return;
-      v.camera.lookAt(center, new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-55), 15));
+      // TUZAK: ilk sürümde range=15m kullanıldı (drone'a çok yakın "chase"
+      // hissi için) ama gerçek donanımla canlı testte bu, kamerayı GERÇEK
+      // yerel arazi yüzeyinin ALTINA gömdü - HOME_ALT_M (800m) drone'un
+      // nominal irtifası, gerçek Eskişehir arazi yüksekliği aynı noktada
+      // birkaç metre ile onlarca metre arasında farklı olabilir (bina/ağaç
+      // vb.), ve 15m*sin(55°)≈12m dikey açıklık bunu karşılamaya yetmiyordu
+      // - kamera yer altında kalınca depthTestAgainstTerrain=false ile bile
+      // ekran tamamen siyah/yıldızlı görünüyordu (terrain mesh'in İÇİNDEN
+      // arkaya bakan yüzü render edilmiyor). ÇÖZÜM: range 120m'ye çıkarıldı
+      // (120*sin(60°)≈104m dikey açıklık) - şehir dokusundaki tipik bina
+      // yüksekliğinin çok üzerinde, gerçek "üstten" görünüm garantileniyor.
+      v.camera.lookAt(center, new Cesium.HeadingPitchRange(0, Cesium.Math.toRadians(-60), 120));
     } catch (e) {}
   }
 
@@ -1162,7 +1187,7 @@ class Component extends DCLogic {
   }
 
   updateMapDynamics(tele) {
-    if (!this.map || !this.droneMarker) return;
+    if (!this.map || !this.droneMarker || !this.fov) return;
     const hdg = tele.position.heading;
     const el = this.droneMarker.getElement();
     if (el) {
