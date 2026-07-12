@@ -42,7 +42,7 @@ import rclpy
 import uvicorn
 from cv_bridge import CvBridge
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pymavlink import mavutil
 from rclpy.node import Node
@@ -53,6 +53,25 @@ from sensor_msgs.msg import Image
 from px4_msgs.msg import SensorCombined, VehicleAttitude, VehicleLocalPosition
 
 STATIC_DIR = Path(__file__).parent / "static"
+CESIUM_TOKEN_PLACEHOLDER = "__CESIUM_ION_TOKEN_PLACEHOLDER__"
+
+
+def _load_cesium_ion_token() -> str:
+    """Reads tools/gcs_web/.env (gitignored, never committed - see
+    .env.example) for CESIUM_ION_TOKEN. Empty if the file/key is missing;
+    the frontend shows an honest "token gerekli" state rather than a fake
+    3D terrain view - see index.html's cesium status handling."""
+    env_path = Path(__file__).parent / ".env"
+    if not env_path.exists():
+        return ""
+    for line in env_path.read_text().splitlines():
+        line = line.strip()
+        if line.startswith("CESIUM_ION_TOKEN="):
+            return line.split("=", 1)[1].strip()
+    return ""
+
+
+CESIUM_ION_TOKEN = _load_cesium_ion_token()
 
 # Gazebo gimbal camera (tools/gz_puppet/puppet_world.sdf's Sensors plugin),
 # bridged to ROS2 by: ros2 run ros_gz_image image_bridge <this topic>
@@ -377,7 +396,9 @@ state = TelemetryState()
 
 @app.get("/")
 async def index():
-    return FileResponse(STATIC_DIR / "index.html")
+    html = (STATIC_DIR / "index.html").read_text()
+    html = html.replace(CESIUM_TOKEN_PLACEHOLDER, CESIUM_ION_TOKEN)
+    return HTMLResponse(html)
 
 
 @app.websocket("/ws/telemetry")

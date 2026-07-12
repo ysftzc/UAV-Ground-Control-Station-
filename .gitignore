@@ -8,3 +8,6 @@ Release/
 .venv/
 __pycache__/
 *.pyc
+
+# Local secrets (Cesium ion API token etc.) - never commit, see .env.example
+tools/gcs_web/.env
